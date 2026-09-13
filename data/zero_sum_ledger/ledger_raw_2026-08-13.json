@@ -1,0 +1,128 @@
+{
+ "by_price_band": {
+  "0.00-0.05": {
+   "fee_pct": 4.8728,
+   "gross_pct": -54.5928,
+   "n": 113930,
+   "notional_usd": 2366267.59,
+   "taker_net_pct": -59.4655
+  },
+  "0.05-0.10": {
+   "fee_pct": 4.6208,
+   "gross_pct": -47.8334,
+   "n": 60933,
+   "notional_usd": 2402103.83,
+   "taker_net_pct": -52.4542
+  },
+  "0.10-0.20": {
+   "fee_pct": 4.2232,
+   "gross_pct": -15.0955,
+   "n": 84508,
+   "notional_usd": 5976567.06,
+   "taker_net_pct": -19.3187
+  },
+  "0.20-0.35": {
+   "fee_pct": 3.5637,
+   "gross_pct": -1.057,
+   "n": 173004,
+   "notional_usd": 29619217.16,
+   "taker_net_pct": -4.6208
+  },
+  "0.35-0.50": {
+   "fee_pct": 2.8305,
+   "gross_pct": 5.2677,
+   "n": 211125,
+   "notional_usd": 51034409.48,
+   "taker_net_pct": 2.4373
+  },
+  "0.50-0.65": {
+   "fee_pct": 2.1403,
+   "gross_pct": 0.5166,
+   "n": 250508,
+   "notional_usd": 84487768.51,
+   "taker_net_pct": -1.6237
+  },
+  "0.65-0.80": {
+   "fee_pct": 1.3962,
+   "gross_pct": 0.3718,
+   "n": 179723,
+   "notional_usd": 69467442.96,
+   "taker_net_pct": -1.0245
+  },
+  "0.80-0.90": {
+   "fee_pct": 0.759,
+   "gross_pct": 2.0394,
+   "n": 87706,
+   "notional_usd": 41128453.99,
+   "taker_net_pct": 1.2804
+  },
+  "0.90-0.95": {
+   "fee_pct": 0.3874,
+   "gross_pct": 2.2767,
+   "n": 53838,
+   "notional_usd": 24950900.43,
+   "taker_net_pct": 1.8893
+  },
+  "0.95-0.98": {
+   "fee_pct": 0.1603,
+   "gross_pct": 1.0529,
+   "n": 49637,
+   "notional_usd": 31294015.74,
+   "taker_net_pct": 0.8926
+  },
+  "0.98-1.00": {
+   "fee_pct": 0.0323,
+   "gross_pct": -1.1271,
+   "n": 74021,
+   "notional_usd": 76711318.3,
+   "taker_net_pct": -1.1594
+  }
+ },
+ "decomposition": {
+  "fee_over_gross_x": 10.423,
+  "protocol_fee_pct": 1.4879,
+  "taker_gross_selection_pct": 0.1427
+ },
+ "method": {
+  "closure": "taker_net + maker_net + protocol == 0 by construction",
+  "denominator": "taker BUY notional = sum(px * size)",
+  "fee_per_share": "rate * p * (1-p); maker pays zero",
+  "fee_rate": "per-market, read from Gamma feeSchedule; markets without a readable rate are dropped rather than defaulted",
+  "sample_frame": "full tick tape of the top-N markets by whale-print notional — a census of large active markets, not of the venue",
+  "settlement": "token_settlement — gated on the market's `closed` flag; unsettled markets are dropped, never marked to current price",
+  "truncation": "the collector caps each market at 6,000 trades (earliest first); see the tape meta file for the truncated-market count"
+ },
+ "sample": {
+  "dropped_trades": {
+   "bad_price": 0,
+   "no_fee_rate": 44138,
+   "no_meta": 0,
+   "sell_leg": 559246,
+   "unsettled": 107170
+  },
+  "markets_dropped": 61,
+  "markets_used": 439,
+  "taker_buy_notional_usd": 419438465.06,
+  "trades_used": 1338933,
+  "window_ts": {
+   "from": 1765485211,
+   "to": 1786596943
+  }
+ },
+ "schema": "marketflow-zero-sum-ledger-v0.1",
+ "three_party_close": {
+  "closes": true,
+  "maker_net_pct": -0.1427,
+  "protocol_pct": 1.4879,
+  "sum_pct": 0.0,
+  "taker_net_pct": -1.3451
+ },
+ "usd": {
+  "fee": 6240760.77,
+  "gross": 598728.37,
+  "maker_net": -598728.37,
+  "notional": 419438465.06,
+  "protocol": 6240760.77,
+  "taker_net": -5642032.4
+ }
+}

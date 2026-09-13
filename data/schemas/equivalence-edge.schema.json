@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ailinsun/MarketFlow/blob/main/data/schemas/equivalence-edge.schema.json",
+  "title": "MarketFlow Directed Version-Bound Contract Relation",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "source_contract_id", "target_contract_id", "relation", "directionality",
+    "source_rules_version", "target_rules_version", "relation_version",
+    "real_world_event_match", "comparisons", "proof", "counterexamples",
+    "mismatch_dimensions", "unknown_dimensions", "evidence", "confidence",
+    "reviewer_status", "stale", "observed_at", "engine_version"
+  ],
+  "properties": {
+    "source_contract_id": {"type": "string", "minLength": 1},
+    "target_contract_id": {"type": "string", "minLength": 1},
+    "left_contract_id": {"type": "string"}, "right_contract_id": {"type": "string"},
+    "relation": {"enum": ["exact_equivalent", "one_way_implication", "overlapping_exposure", "partial_hedge", "mutually_exclusive", "exhaustive_partition", "not_equivalent", "unknown"]},
+    "directionality": {"enum": ["symmetric", "source_to_target"]},
+    "relation_version": {"const": "marketflow-contract-relation-v1.0.0"},
+    "source_rules_version": {"type": "string"},
+    "target_rules_version": {"type": "string"},
+    "left_rules_version": {"type": "string"}, "right_rules_version": {"type": "string"},
+    "compared_rules_versions": {"type": "object"},
+    "real_world_event_match": {"type": "object"},
+    "comparisons": {"type": "object"},
+    "proof": {
+      "type": "object",
+      "required": ["method", "established"],
+      "properties": {"method": {"type": "string", "minLength": 1}, "established": {"type": "boolean"}},
+      "additionalProperties": true
+    },
+    "counterexamples": {"type": "array", "items": {"type": "object"}},
+    "mismatch_dimensions": {"type": "array", "items": {"type": "string"}},
+    "unknown_dimensions": {"type": "array", "items": {"type": "string"}},
+    "unknown_reason": {"type": ["string", "null"]},
+    "evidence": {"type": "array", "items": {"type": "object"}},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "reviewer_status": {"enum": ["pending", "confirmed", "rejected", "overridden"]},
+    "stale": {"type": "boolean"}, "observed_at": {"type": "string"},
+    "engine_version": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"relation": {"enum": ["exact_equivalent", "one_way_implication", "overlapping_exposure", "partial_hedge", "mutually_exclusive", "exhaustive_partition"]}}, "required": ["relation"]},
+      "then": {"properties": {"proof": {"properties": {"established": {"const": true}}}}}
+    },
+    {
+      "if": {"properties": {"relation": {"enum": ["one_way_implication", "partial_hedge"]}}, "required": ["relation"]},
+      "then": {"properties": {"directionality": {"const": "source_to_target"}}},
+      "else": {"properties": {"directionality": {"const": "symmetric"}}}
+    },
+    {
+      "if": {"properties": {"relation": {"const": "unknown"}}, "required": ["relation"]},
+      "then": {"required": ["unknown_reason"], "properties": {"unknown_reason": {"type": "string", "minLength": 1}}}
+    }
+  ]
+}

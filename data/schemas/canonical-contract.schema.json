@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ailinsun/MarketFlow/blob/main/data/schemas/canonical-contract.schema.json",
+  "title": "MarketFlow Canonical Event Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "marketflow_event_id", "marketflow_contract_id", "venue", "venue_contract_id", "title",
+    "predicate", "outcomes", "payout_function", "observation_window", "timezone",
+    "primary_sources", "fallback_sources", "exceptions", "cancellation", "early_close",
+    "dispute_path", "operative_rules", "rules_version", "rules_hash", "rule_semantics",
+    "settlement_state", "world_state", "contract_state", "venue_state", "orderbook",
+    "evidence", "unknown_reasons", "observed_at", "data_freshness", "schema_version",
+    "ontology_version", "engine_version", "raw_upstream"
+  ],
+  "$defs": {
+    "unknownReason": {"type": ["string", "null"], "minLength": 1},
+    "evidence": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "reference": {}, "source_id": {}, "observed_at": {"type": "string"},
+        "published_at": {}, "value": {}, "span": {"type": "object"},
+        "parser_version": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "stateSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine", "state", "version", "observed_at", "evidence", "unknown_reason"],
+      "properties": {
+        "machine": {"enum": ["world", "contract", "venue"]},
+        "state": {"type": "string", "minLength": 1},
+        "version": {"const": "marketflow-institutional-state-machines-v1.0.0"},
+        "observed_at": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition", "effect", "evidence", "unknown_reason"],
+      "properties": {
+        "condition": {}, "effect": {},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["priority", "name", "reference", "evidence", "unknown_reason"],
+      "properties": {
+        "priority": {"type": "integer", "minimum": 1},
+        "name": {}, "reference": {}, "trigger": {},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "properties": {
+    "marketflow_event_id": {"type": "string", "minLength": 1},
+    "marketflow_contract_id": {"type": "string", "minLength": 1},
+    "real_world_event_key": {},
+    "venue": {"enum": ["polymarket", "kalshi"]},
+    "venue_contract_id": {"type": "string", "minLength": 1},
+    "venue_event_id": {}, "venue_series_id": {}, "title": {}, "subtitle": {},
+    "event_title": {}, "category": {},
+    "predicate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "statement", "truth_conditions", "false_conditions", "evidence", "unknown_reason"],
+      "properties": {
+        "kind": {}, "statement": {},
+        "truth_conditions": {"type": "array"}, "false_conditions": {"type": "array"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "outcomes": {
+      "type": "array", "minItems": 2,
+      "items": {
+        "type": "object", "required": ["id", "label", "evidence", "unknown_reason"],
+        "properties": {"id": {"type": "string"}, "label": {},
+          "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+          "unknown_reason": {"$ref": "#/$defs/unknownReason"}},
+        "additionalProperties": true
+      }
+    },
+    "payout_function": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "currency", "winning_unit_payout", "losing_unit_payout",
+        "outcome_payouts", "state_payouts", "void_payout", "rounding", "rule_text", "evidence", "unknown_reason"],
+      "properties": {
+        "type": {"enum": ["binary", "categorical", "scalar", "custom", "unknown"]},
+        "currency": {}, "winning_unit_payout": {}, "losing_unit_payout": {},
+        "outcome_payouts": {"type": "array"}, "state_payouts": {"type": "object"},
+        "void_payout": {}, "rounding": {}, "rule_text": {},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "observation_window": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start", "end", "timezone", "start_inclusive", "end_inclusive",
+        "event_time_basis", "rule_text", "evidence", "unknown_reason"],
+      "properties": {
+        "start": {}, "end": {}, "timezone": {}, "start_inclusive": {}, "end_inclusive": {},
+        "event_time_basis": {}, "rule_text": {},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "timezone": {},
+    "primary_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "fallback_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "exceptions": {"type": "array", "items": {"$ref": "#/$defs/clause"}},
+    "cancellation": {"$ref": "#/$defs/clause"},
+    "early_close": {"$ref": "#/$defs/clause"},
+    "dispute_path": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resolver", "proposal_and_challenge", "challenge_window", "redetermination",
+        "finality", "evidence", "unknown_reason"],
+      "properties": {
+        "resolver": {}, "proposal_and_challenge": {}, "challenge_window": {},
+        "redetermination": {}, "finality": {},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }
+    },
+    "operative_rules": {}, "rules_version": {"type": "string"}, "rules_hash": {"type": "string"},
+    "rules_changed": {"type": ["boolean", "null"]},
+    "rules_diff": {"type": "array", "items": {"type": "string"}},
+    "rules_impacted_fields": {"type": "array", "items": {"type": "string"}},
+    "rule_review": {"type": "object"}, "rule_semantics": {"type": "object"},
+    "resolution_source": {},
+    "raw_source_field_states": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["path", "state"],
+        "properties": {"path": {"type": "string"},
+          "state": {"enum": ["absent", "null", "empty", "present"]}},
+        "additionalProperties": false
+      }
+    },
+    "resolution_source_observations": {
+      "type": "array", "items": {"type": "object"}
+    },
+    "source_dependency": {
+      "type": "object",
+      "required": ["status", "effective_source", "evidence_basis", "observation_count",
+        "review_required", "reason", "reconciliation_version"],
+      "properties": {
+        "status": {"enum": ["established", "unknown", "contradiction", "review_required"]},
+        "effective_source": {},
+        "evidence_basis": {"type": "array", "items": {"type": "string"}},
+        "observation_count": {"type": "integer", "minimum": 0},
+        "review_required": {"type": "boolean"}, "reason": {"type": "string"},
+        "reconciliation_version": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "source_hierarchy": {}, "cutoff_time": {}, "determination_time": {},
+    "oracle_or_resolver": {}, "dispute_window": {}, "fallback_clauses": {},
+    "exception_clauses": {}, "finality_rules": {}, "status": {}, "result": {},
+    "risk_band": {"enum": ["low", "medium", "high", "critical", "unknown"]},
+    "overall_risk_band": {"enum": ["low", "medium", "high", "critical", "unknown"]},
+    "settlement_state": {
+      "type": "object", "required": ["status", "result", "payouts", "final", "observed_at", "evidence", "unknown_reason"],
+      "properties": {
+        "status": {"type": "string"}, "result": {}, "payouts": {"type": "object"},
+        "final": {"type": "boolean"}, "observed_at": {"type": "string"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "unknown_reason": {"$ref": "#/$defs/unknownReason"}
+      }, "additionalProperties": true
+    },
+    "world_state": {"$ref": "#/$defs/stateSnapshot"},
+    "contract_state": {"$ref": "#/$defs/stateSnapshot"},
+    "venue_state": {"$ref": "#/$defs/stateSnapshot"},
+    "open_time": {}, "close_time": {}, "orderbook": {"type": "object"},
+    "bid_ask": {"type": "object"}, "volume": {}, "open_interest": {},
+    "last_update_timestamps": {"type": "object"},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "source_url": {}, "observed_at": {"type": "string"},
+    "data_freshness": {"enum": ["fresh", "stale", "unknown"]},
+    "unknown_reasons": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+    "schema_version": {"const": "marketflow-canonical-contract-v1.1.0"},
+    "ontology_version": {"const": "marketflow-event-contract-ontology-v1.0.0"},
+    "migrated_from_schema_version": {"type": ["string", "null"]},
+    "engine_version": {"type": "string"}, "raw_upstream": {"type": "object"}
+  }
+}

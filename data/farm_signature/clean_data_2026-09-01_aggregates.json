@@ -1,0 +1,86 @@
+{
+ "changelog": [],
+ "citation": {
+  "dataset": "adjusted-ranking-snapshot",
+  "how_to_cite": "Ailin Sun. \"Polymarket wallet ranking, farm-filtered.\" Version 04fd708f9336 (2026-09-01), window 2026-07-06 to 2026-09-01. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
+  "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
+  "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/farm_signature/clean_data_2026-09-01_aggregates.json",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "method_version": "clean-data-v0.2",
+  "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
+  "publisher": "Ailin Sun",
+  "title": "Polymarket wallet ranking, farm-filtered",
+  "version": "04fd708f9336",
+  "version_date": "2026-09-01"
+ },
+ "clean": {
+  "farm_share": 0.0,
+  "gates": "life_days>=7.0 & n_markets>=3 & not farm",
+  "median_buy_usd": 620876.7,
+  "median_life_days": 54.139,
+  "median_n_markets": 85,
+  "median_n_trades": 134,
+  "n": 500,
+  "rank_key": "n_trades * n_markets",
+  "unnamed_share": 0.148,
+  "list_omitted": "50 rows omitted from the public release (per-wallet data is not published); the method and aggregates are complete"
+ },
+ "field_dictionary": {
+  "activity_score": "n_trades x n_markets — rank key of the clean list",
+  "buy_usd": "observed buy notional (USD) inside the snapshot window",
+  "is_farm": "repeated-volume pattern label derived from sig_share; labels a pattern, not intent",
+  "label": "public Polymarket username when the profile is named",
+  "life_days": "days between the wallet's first and last observed print",
+  "n_buys": "observed BUY prints inside the snapshot window",
+  "n_markets": "distinct markets traded inside the snapshot window",
+  "n_trades": "observed prints inside the snapshot window",
+  "named": "profile carries a public username",
+  "near_certain_share": "share of buy dollars at near-certain prices (continuous, 0-1)",
+  "sell_usd": "observed sell notional (USD) inside the snapshot window",
+  "sig_prints": "prints matching farm signatures",
+  "sig_share": "share of buy dollars matching farm signatures (continuous, 0-1)",
+  "wallet": "proxy wallet address as observed in the public trade feed"
+ },
+ "generated_at": "2026-09-01T02:03:22Z",
+ "method": {
+  "clean_rank": "n_trades * n_markets descending",
+  "contest": "believe a wallet is mis-flagged? use https://github.com/ailinsun/MarketFlow/issues — corrections land in the snapshot changelog",
+  "eligibility": {
+   "drop_farms": true,
+   "min_life_days": 7.0,
+   "min_markets": 3
+  },
+  "farm_params_version": "1528783eecbb",
+  "farm_signature": "BUY prints at price >= 0.99 grouped by exact (condition_id, size); a group is a farm signature when >=5 wallets repeat it across >=20 prints; a wallet is flagged when >=80% of its observed buy dollars land on such signatures.",
+  "page": "/unpublished research artifact",
+  "raw_rank": "buy_usd descending"
+ },
+ "overlap_n": 318,
+ "overlap_share": 0.636,
+ "raw": {
+  "farm_share": 0.0,
+  "gates": "none",
+  "median_buy_usd": 919572.3,
+  "median_life_days": 52.441,
+  "median_n_markets": 69,
+  "median_n_trades": 120,
+  "n": 500,
+  "rank_key": "buy_usd",
+  "unnamed_share": 0.148,
+  "list_omitted": "50 rows omitted from the public release (per-wallet data is not published); the method and aggregates are complete"
+ },
+ "sample": {
+  "rows": 243754,
+  "wallets": 15142
+ },
+ "schema": "marketflow-clean-data-public-v0.2",
+ "source": "Polymarket public trade feed",
+ "source_generated_at": "2026-09-01T02:03:19Z",
+ "window": {
+  "from": "2026-07-06T05:22:01Z",
+  "to": "2026-09-01T01:42:09Z"
+ },
+ "window_end": "2026-09-01T01:42:09Z",
+ "window_start": "2026-07-06T05:22:01Z"
+}

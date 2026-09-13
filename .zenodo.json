@@ -1,0 +1,21 @@
+{
+  "title": "MarketFlow: experimental prediction-market research",
+  "upload_type": "software",
+  "description": "Experimental studies by independent researcher Ailin Sun on prediction-market order flow, event-contract fees, repeated trading patterns and UMA settlement. Includes research instruments, frozen aggregate snapshots and historical working reports, with offline checks of the included methods and aggregate identities. Raw trading tapes and wallet identities are not distributed. Contract-pair annotations retain initial review status. Code is Apache-2.0; the original data compilation, reports and research documentation are CC BY 4.0, subject to upstream rights.",
+  "creators": [
+    {
+      "name": "Sun, Ailin"
+    }
+  ],
+  "license": "Apache-2.0",
+  "version": "0.1.2",
+  "keywords": [
+    "prediction markets",
+    "market microstructure",
+    "event-contract fees",
+    "Polymarket",
+    "UMA",
+    "settlement"
+  ],
+  "access_right": "open"
+}

@@ -1,0 +1,167 @@
+{
+ "by_price_band": {
+  "0.00-0.05": {
+   "fee_pct": 4.8728,
+   "gross_pct": -54.5928,
+   "n": 113930,
+   "notional_usd": 2366267.59,
+   "taker_net_pct": -59.4655
+  },
+  "0.05-0.10": {
+   "fee_pct": 4.6208,
+   "gross_pct": -47.8334,
+   "n": 60933,
+   "notional_usd": 2402103.83,
+   "taker_net_pct": -52.4542
+  },
+  "0.10-0.20": {
+   "fee_pct": 4.2232,
+   "gross_pct": -15.0955,
+   "n": 84508,
+   "notional_usd": 5976567.06,
+   "taker_net_pct": -19.3187
+  },
+  "0.20-0.35": {
+   "fee_pct": 3.5637,
+   "gross_pct": -1.057,
+   "n": 173004,
+   "notional_usd": 29619217.16,
+   "taker_net_pct": -4.6208
+  },
+  "0.35-0.50": {
+   "fee_pct": 2.8305,
+   "gross_pct": 5.2677,
+   "n": 211125,
+   "notional_usd": 51034409.48,
+   "taker_net_pct": 2.4373
+  },
+  "0.50-0.65": {
+   "fee_pct": 2.1403,
+   "gross_pct": 0.5166,
+   "n": 250508,
+   "notional_usd": 84487768.51,
+   "taker_net_pct": -1.6237
+  },
+  "0.65-0.80": {
+   "fee_pct": 1.3962,
+   "gross_pct": 0.3718,
+   "n": 179723,
+   "notional_usd": 69467442.96,
+   "taker_net_pct": -1.0245
+  },
+  "0.80-0.90": {
+   "fee_pct": 0.759,
+   "gross_pct": 2.0394,
+   "n": 87706,
+   "notional_usd": 41128453.99,
+   "taker_net_pct": 1.2804
+  },
+  "0.90-0.95": {
+   "fee_pct": 0.3874,
+   "gross_pct": 2.2767,
+   "n": 53838,
+   "notional_usd": 24950900.43,
+   "taker_net_pct": 1.8893
+  },
+  "0.95-0.98": {
+   "fee_pct": 0.1603,
+   "gross_pct": 1.0529,
+   "n": 49637,
+   "notional_usd": 31294015.74,
+   "taker_net_pct": 0.8926
+  },
+  "0.98-1.00": {
+   "fee_pct": 0.0323,
+   "gross_pct": -1.1271,
+   "n": 74021,
+   "notional_usd": 76711318.3,
+   "taker_net_pct": -1.1594
+  }
+ },
+ "changelog": [],
+ "citation": {
+  "dataset": "prediction-market-zero-sum-ledger",
+  "how_to_cite": "Ailin Sun. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
+  "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
+  "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/zero_sum_ledger/zero_sum_ledger.json",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "method_version": "zero-sum-ledger-v0.1",
+  "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
+  "publisher": "Ailin Sun",
+  "title": "Polymarket zero-sum flow ledger",
+  "version": "858973c2494c",
+  "version_date": "2026-08-13"
+ },
+ "contains_holdings": false,
+ "contains_pnl": false,
+ "contest": "think a row is wrong? https://github.com/ailinsun/MarketFlow/issues — corrections are published in the snapshot changelog",
+ "decomposition": {
+  "fee_over_gross_x": 10.423,
+  "protocol_fee_pct": 1.4879,
+  "taker_gross_selection_pct": 0.1427
+ },
+ "field_dictionary": {
+  "fee_over_gross_x": "protocol take divided by the crowd's entire gross edge",
+  "maker_net_pct": "the counterparty side of the same trades; it pays no taker fee, so this is the mirror of gross selection",
+  "protocol_pct": "taker fees collected by the venue over the same notional",
+  "sum_pct": "the three rows above; an identity, so it is zero",
+  "taker_gross_selection_pct": "how much the buying crowd beat its counterparties by, before fees — NOT anyone's final result",
+  "taker_net_pct": "what the buying side kept, as a share of its own buy notional (gross selection minus protocol fees)"
+ },
+ "generated_at": "2026-08-13T07:24:56Z",
+ "how_to_replay": {
+  "caveats": [
+   "This is a census of the top 500 markets by large-print notional — the venue's active core, not the venue. Long-tail markets are outside the frame.",
+   "The collector caps each market at 6,000 trades. The venue API returns newest-first, so a truncated market keeps its most recent 6,000 fills and loses older history — a recency skew on long-lived, high-frequency markets. Count in `sample.truncated_markets`.",
+   "Every rate is a per-window quantity. Two snapshots are only comparable through their windows."
+  ],
+  "source": "Polymarket public data-api /trades (tick tape) + gamma-api /markets (settlement prices and per-market fee schedules)",
+  "steps": [
+   "Rank markets by whale-print notional and pull the full tick tape of the top 500.",
+   "Keep BUY legs only; the sell leg of the same fill is its mirror and would double-count.",
+   "For each trade: notional = px*size, gross = (settle-px)*size, fee = rate*px*(1-px)*size.",
+   "Settlement comes from the market's closed flag; unsettled markets are dropped, never marked to the current price. Markets without a readable fee rate are dropped too.",
+   "taker_net = gross - fee, maker_net = -gross, protocol = +fee. Sum over all trades, divide by total buy notional. The three rows sum to zero by construction."
+  ]
+ },
+ "method": {
+  "closure": "taker_net + maker_net + protocol == 0 by construction",
+  "denominator": "taker BUY notional = sum(px * size)",
+  "fee_per_share": "rate * p * (1-p); maker pays zero",
+  "fee_rate": "per-market, read from Gamma feeSchedule; markets without a readable rate are dropped rather than defaulted",
+  "sample_frame": "full tick tape of the top-N markets by whale-print notional — a census of large active markets, not of the venue",
+  "settlement": "token_settlement — gated on the market's `closed` flag; unsettled markets are dropped, never marked to current price",
+  "truncation": "the collector caps each market at 6,000 trades (earliest first); see the tape meta file for the truncated-market count"
+ },
+ "sample": {
+  "dropped_trades": {
+   "bad_price": 0,
+   "no_fee_rate": 44138,
+   "no_meta": 0,
+   "sell_leg": 559246,
+   "unsettled": 107170
+  },
+  "markets_dropped": 61,
+  "markets_reconciled": 439,
+  "max_trades_per_market": 6000,
+  "share_of_large_print_notional": 0.5256457381151874,
+  "taker_buy_notional_usd": 419438465.06,
+  "tape_markets_collected": 500,
+  "trades_reconciled": 1338933,
+  "truncated_markets": 171
+ },
+ "schema": "marketflow-zero-sum-ledger-public-v0.1",
+ "three_party_close": {
+  "closes": true,
+  "maker_net_pct": -0.1427,
+  "protocol_pct": 1.4879,
+  "sum_pct": 0.0,
+  "taker_net_pct": -1.3451
+ },
+ "window": {
+  "basis": "trade timestamps of every reconciled fill",
+  "from": "2025-12-11T20:33:31Z",
+  "to": "2026-08-13T04:55:43Z"
+ }
+}

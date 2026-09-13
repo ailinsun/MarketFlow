@@ -1,0 +1,197 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/ailinsun/MarketFlow/blob/main/data/contract_equivalence/gold_pair.schema.json",
+ "title": "MarketFlow cross-venue gold relation pair",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "schema_version",
+  "pair_id",
+  "pair",
+  "relation",
+  "strata",
+  "evidence",
+  "labeled_at",
+  "labeler",
+  "review_status",
+  "blockcircle_query_hint"
+ ],
+ "properties": {
+  "schema_version": {
+   "const": "marketflow-blockcircle-gold-pair-v1"
+  },
+  "pair_id": {
+   "type": "string",
+   "minLength": 8
+  },
+  "pair": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "left",
+    "right"
+   ],
+   "properties": {
+    "left": {
+     "$ref": "#/$defs/market"
+    },
+    "right": {
+     "$ref": "#/$defs/market"
+    }
+   }
+  },
+  "relation": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "label",
+    "direction",
+    "rationale",
+    "minimal_counterexample",
+    "confidence",
+    "unknowns"
+   ],
+   "properties": {
+    "label": {
+     "enum": [
+      "exact_equivalent",
+      "left_implies_right",
+      "right_implies_left",
+      "overlapping_exposure",
+      "partial_hedge",
+      "mutually_exclusive",
+      "exhaustive_partition",
+      "not_equivalent",
+      "unknown"
+     ]
+    },
+    "direction": {
+     "enum": [
+      "bidirectional",
+      "left_to_right",
+      "right_to_left",
+      "none",
+      "unknown"
+     ]
+    },
+    "rationale": {
+     "type": "string",
+     "minLength": 20
+    },
+    "minimal_counterexample": {
+     "type": "string",
+     "minLength": 20
+    },
+    "confidence": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    },
+    "unknowns": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "uniqueItems": true
+    }
+   }
+  },
+  "strata": {
+   "type": "array",
+   "minItems": 2,
+   "items": {
+    "type": "string"
+   },
+   "uniqueItems": true
+  },
+  "evidence": {
+   "type": "array",
+   "minItems": 2,
+   "items": {
+    "$ref": "#/$defs/evidence"
+   }
+  },
+  "labeled_at": {
+   "type": "string",
+   "format": "date-time"
+  },
+  "labeler": {
+   "type": "string",
+   "minLength": 3
+  },
+  "review_status": {
+   "enum": [
+    "initial",
+    "reviewed",
+    "adjudicated"
+   ]
+  },
+  "blockcircle_query_hint": {
+   "type": "string",
+   "minLength": 2
+  }
+ },
+ "$defs": {
+  "market": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "venue",
+    "market_id",
+    "question",
+    "source_url"
+   ],
+   "properties": {
+    "venue": {
+     "enum": [
+      "polymarket",
+      "kalshi"
+     ]
+    },
+    "market_id": {
+     "type": "string",
+     "minLength": 2
+    },
+    "question": {
+     "type": "string",
+     "minLength": 5
+    },
+    "source_url": {
+     "type": "string",
+     "format": "uri"
+    }
+   }
+  },
+  "evidence": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "side",
+    "field",
+    "source_url",
+    "basis"
+   ],
+   "properties": {
+    "side": {
+     "enum": [
+      "left",
+      "right",
+      "relation"
+     ]
+    },
+    "field": {
+     "type": "string",
+     "minLength": 2
+    },
+    "source_url": {
+     "type": "string",
+     "format": "uri"
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 10
+    }
+   }
+  }
+ }
+}

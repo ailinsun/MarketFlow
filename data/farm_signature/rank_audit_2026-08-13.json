@@ -1,0 +1,67 @@
+{
+ "baseline_farm_share": 0.058935,
+ "by_top_n": {
+  "top_100": {
+   "by_activity_x_breadth": {
+    "farm": 0,
+    "farm_share": 0.0,
+    "n": 100
+   },
+   "by_dollar_volume": {
+    "farm": 0,
+    "farm_share": 0.0,
+    "n": 100
+   },
+   "ratio_x": null
+  },
+  "top_1000": {
+   "by_activity_x_breadth": {
+    "farm": 0,
+    "farm_share": 0.0,
+    "n": 1000
+   },
+   "by_dollar_volume": {
+    "farm": 101,
+    "farm_share": 0.101,
+    "n": 1000
+   },
+   "ratio_x": null
+  },
+  "top_500": {
+   "by_activity_x_breadth": {
+    "farm": 0,
+    "farm_share": 0.0,
+    "n": 500
+   },
+   "by_dollar_volume": {
+    "farm": 10,
+    "farm_share": 0.02,
+    "n": 500
+   },
+   "ratio_x": null
+  },
+  "top_5000": {
+   "by_activity_x_breadth": {
+    "farm": 0,
+    "farm_share": 0.0,
+    "n": 5000
+   },
+   "by_dollar_volume": {
+    "farm": 2308,
+    "farm_share": 0.4616,
+    "n": 5000
+   },
+   "ratio_x": null
+  }
+ },
+ "farm_list_path": "unpublished research artifact",
+ "farm_wallets_in_list": 8518,
+ "rank_keys": {
+  "by_activity_x_breadth": "n_trades * n_markets descending",
+  "by_dollar_volume": "sum(px*size) descending"
+ },
+ "reading": "the same wallets, the same farm list — only the sort key changes. What a leaderboard shows is a property of its ranking key, not of the traders.",
+ "schema": "marketflow-farm-rank-audit-v0.1",
+ "tape_path": "unpublished research artifact",
+ "wallets_with_buys": 144532
+}

@@ -1,0 +1,517 @@
+{
+ "by_category": {
+  "crypto": {
+   "dispute_rate": 0.004001,
+   "dispute_rate_ci95": [
+    0.002904,
+    0.00551
+   ],
+   "disputed": 37,
+   "reportable": true,
+   "settled": 9248
+  },
+  "entertainment": {
+   "dispute_rate": 0.013667,
+   "dispute_rate_ci95": [
+    0.010868,
+    0.017176
+   ],
+   "disputed": 72,
+   "reportable": true,
+   "settled": 5268
+  },
+  "legal": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.035295
+   ],
+   "disputed": 0,
+   "reportable": true,
+   "settled": 105
+  },
+  "macro": {
+   "dispute_rate": 0.013812,
+   "dispute_rate_ci95": [
+    0.008388,
+    0.022664
+   ],
+   "disputed": 15,
+   "reportable": true,
+   "settled": 1086
+  },
+  "other": {
+   "dispute_rate": 0.008222,
+   "dispute_rate_ci95": [
+    0.007566,
+    0.008934
+   ],
+   "disputed": 551,
+   "reportable": true,
+   "settled": 67016
+  },
+  "politics": {
+   "dispute_rate": 0.010229,
+   "dispute_rate_ci95": [
+    0.008705,
+    0.012017
+   ],
+   "disputed": 146,
+   "reportable": true,
+   "settled": 14273
+  },
+  "sports": {
+   "dispute_rate": 0.005131,
+   "dispute_rate_ci95": [
+    0.00434,
+    0.006066
+   ],
+   "disputed": 136,
+   "reportable": true,
+   "settled": 26503
+  }
+ },
+ "by_rule_template": {
+  "explicit_source": {
+   "dispute_rate": 0.019226,
+   "dispute_rate_ci95": [
+    0.015517,
+    0.023801
+   ],
+   "disputed": 82,
+   "reportable": true,
+   "settled": 4265
+  },
+  "explicit_source+fallback_clause": {
+   "dispute_rate": 0.012714,
+   "dispute_rate_ci95": [
+    0.010578,
+    0.015275
+   ],
+   "disputed": 112,
+   "reportable": true,
+   "settled": 8809
+  },
+  "explicit_source+fallback_clause+revision_clause": {
+   "dispute_rate": 0.022472,
+   "dispute_rate_ci95": [
+    0.006184,
+    0.078278
+   ],
+   "disputed": 2,
+   "reportable": false,
+   "settled": 89
+  },
+  "explicit_source+revision_clause": {
+   "dispute_rate": 0.01515,
+   "dispute_rate_ci95": [
+    0.013009,
+    0.017637
+   ],
+   "disputed": 163,
+   "reportable": true,
+   "settled": 10759
+  },
+  "explicit_source+timezone_boundary": {
+   "dispute_rate": 0.005808,
+   "dispute_rate_ci95": [
+    0.004787,
+    0.007045
+   ],
+   "disputed": 102,
+   "reportable": true,
+   "settled": 17561
+  },
+  "explicit_source+timezone_boundary+fallback_clause": {
+   "dispute_rate": 0.004903,
+   "dispute_rate_ci95": [
+    0.004041,
+    0.005948
+   ],
+   "disputed": 102,
+   "reportable": true,
+   "settled": 20802
+  },
+  "explicit_source+timezone_boundary+fallback_clause+revision_clause": {
+   "dispute_rate": 0.023188,
+   "dispute_rate_ci95": [
+    0.011796,
+    0.045083
+   ],
+   "disputed": 8,
+   "reportable": true,
+   "settled": 345
+  },
+  "explicit_source+timezone_boundary+revision_clause": {
+   "dispute_rate": 0.007874,
+   "dispute_rate_ci95": [
+    0.001391,
+    0.043255
+   ],
+   "disputed": 1,
+   "reportable": true,
+   "settled": 127
+  },
+  "fallback_clause": {
+   "dispute_rate": 0.002965,
+   "dispute_rate_ci95": [
+    0.002262,
+    0.003886
+   ],
+   "disputed": 52,
+   "reportable": true,
+   "settled": 17538
+  },
+  "plain": {
+   "dispute_rate": 0.00565,
+   "dispute_rate_ci95": [
+    0.000998,
+    0.031304
+   ],
+   "disputed": 1,
+   "reportable": true,
+   "settled": 177
+  },
+  "subjective_language": {
+   "dispute_rate": 0.5,
+   "dispute_rate_ci95": [
+    0.215213,
+    0.784787
+   ],
+   "disputed": 4,
+   "reportable": false,
+   "settled": 8
+  },
+  "subjective_language+explicit_source": {
+   "dispute_rate": 0.00793,
+   "dispute_rate_ci95": [
+    0.005492,
+    0.011437
+   ],
+   "disputed": 28,
+   "reportable": true,
+   "settled": 3531
+  },
+  "subjective_language+explicit_source+fallback_clause": {
+   "dispute_rate": 0.004764,
+   "dispute_rate_ci95": [
+    0.003473,
+    0.006532
+   ],
+   "disputed": 38,
+   "reportable": true,
+   "settled": 7976
+  },
+  "subjective_language+explicit_source+fallback_clause+multi_source": {
+   "dispute_rate": 0.005353,
+   "dispute_rate_ci95": [
+    0.003729,
+    0.007677
+   ],
+   "disputed": 29,
+   "reportable": true,
+   "settled": 5418
+  },
+  "subjective_language+explicit_source+multi_source": {
+   "dispute_rate": 0.001433,
+   "dispute_rate_ci95": [
+    0.000393,
+    0.005209
+   ],
+   "disputed": 2,
+   "reportable": true,
+   "settled": 1396
+  },
+  "subjective_language+explicit_source+revision_clause+multi_source": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.4899
+   ],
+   "disputed": 0,
+   "reportable": false,
+   "settled": 4
+  },
+  "subjective_language+explicit_source+timezone_boundary": {
+   "dispute_rate": 0.00845,
+   "dispute_rate_ci95": [
+    0.006467,
+    0.011036
+   ],
+   "disputed": 53,
+   "reportable": true,
+   "settled": 6272
+  },
+  "subjective_language+explicit_source+timezone_boundary+fallback_clause": {
+   "dispute_rate": 0.013108,
+   "dispute_rate_ci95": [
+    0.01079,
+    0.015916
+   ],
+   "disputed": 100,
+   "reportable": true,
+   "settled": 7629
+  },
+  "subjective_language+explicit_source+timezone_boundary+fallback_clause+multi_source": {
+   "dispute_rate": 0.009032,
+   "dispute_rate_ci95": [
+    0.006257,
+    0.013023
+   ],
+   "disputed": 28,
+   "reportable": true,
+   "settled": 3100
+  },
+  "subjective_language+explicit_source+timezone_boundary+fallback_clause+revision_clause": {
+   "dispute_rate": 0.015625,
+   "dispute_rate_ci95": [
+    0.002763,
+    0.083343
+   ],
+   "disputed": 1,
+   "reportable": false,
+   "settled": 64
+  },
+  "subjective_language+explicit_source+timezone_boundary+multi_source": {
+   "dispute_rate": 0.007096,
+   "dispute_rate_ci95": [
+    0.005216,
+    0.009648
+   ],
+   "disputed": 40,
+   "reportable": true,
+   "settled": 5637
+  },
+  "subjective_language+fallback_clause": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.096422
+   ],
+   "disputed": 0,
+   "reportable": false,
+   "settled": 36
+  },
+  "subjective_language+multi_source": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.561506
+   ],
+   "disputed": 0,
+   "reportable": false,
+   "settled": 3
+  },
+  "subjective_language+timezone_boundary": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.354339
+   ],
+   "disputed": 0,
+   "reportable": false,
+   "settled": 7
+  },
+  "subjective_language+timezone_boundary+fallback_clause": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.052025
+   ],
+   "disputed": 0,
+   "reportable": false,
+   "settled": 70
+  },
+  "timezone_boundary": {
+   "dispute_rate": 0.0,
+   "dispute_rate_ci95": [
+    0.0,
+    0.019128
+   ],
+   "disputed": 0,
+   "reportable": true,
+   "settled": 197
+  },
+  "timezone_boundary+fallback_clause": {
+   "dispute_rate": 0.00536,
+   "dispute_rate_ci95": [
+    0.002823,
+    0.010156
+   ],
+   "disputed": 9,
+   "reportable": true,
+   "settled": 1679
+  }
+ },
+ "changelog": [],
+ "citation": {
+  "dataset": "settlement-quality-register",
+  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-19), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-19-9b25803e6ca8.json",
+  "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-19-9b25803e6ca8.json",
+  "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "method_version": "settlement-quality-v0.1",
+  "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
+  "publisher": "Ailin Sun",
+  "title": "Polymarket settlement quality register",
+  "version": "9b25803e6ca8",
+  "version_date": "2026-08-19"
+ },
+ "contains_holdings": false,
+ "contains_pnl": false,
+ "contest": "found a bucket you think is wrong? https://github.com/ailinsun/MarketFlow/issues — corrections are published in the snapshot changelog",
+ "coverage": {
+  "canonical_requesters": [
+   "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7",
+   "0x69c47de9d4d3dad79590d61b9e05918e03775f24",
+   "0x2f5e3684cb1f318ec51b00edba38d79ac2c0aa9d"
+  ],
+  "covers_all_settled_disputes_in_source": true,
+  "disputed_markets": 957,
+  "settled_disputed_markets": 955,
+  "settled_requests": 123499,
+  "source": "UMA Polygon Optimistic Oracle V2 public subgraph (endpoint identifier omitted)"
+ },
+ "dispute_duration_hours_by_category": {
+  "crypto": {
+   "max": 99.49,
+   "n": 41,
+   "p50": 79.37,
+   "p90": 98.28,
+   "reportable": false
+  },
+  "entertainment": {
+   "max": 194.48,
+   "n": 78,
+   "p50": 75.22,
+   "p90": 194.34,
+   "reportable": false
+  },
+  "macro": {
+   "max": 87.66,
+   "n": 18,
+   "p50": 78.69,
+   "p90": 87.28,
+   "reportable": false
+  },
+  "other": {
+   "max": 392.44,
+   "n": 577,
+   "p50": 78.8,
+   "p90": 96.37,
+   "reportable": true
+  },
+  "politics": {
+   "max": 155.29,
+   "n": 162,
+   "p50": 76.97,
+   "p90": 96.59,
+   "reportable": true
+  },
+  "sports": {
+   "max": 107.15,
+   "n": 137,
+   "p50": 74.35,
+   "p90": 97.72,
+   "reportable": true
+  }
+ },
+ "field_dictionary": {
+  "dispute_duration_hours": "hours from the on-chain dispute to the on-chain settlement",
+  "dispute_rate": "disputed / settled",
+  "dispute_rate_ci95": "Wilson 95% score interval on dispute_rate",
+  "disputed": "settled markets in this bucket where the proposal was disputed",
+  "proposal_change_rate": "settled disputes where the final answer differs from the proposed one, over all settled disputes",
+  "reportable": "false when settled < min_n_reportable; the row is still published, but the rate alone should not be quoted",
+  "settled": "settled UMA price requests in this bucket, grouped by market id"
+ },
+ "generated_at": "2026-08-19T04:11:45Z",
+ "headline": {
+  "dispute_duration_hours": {
+   "max": 392.44,
+   "n": 1013,
+   "p50": 77.71,
+   "p90": 96.7
+  },
+  "proposal_change_rate": 0.071204,
+  "proposal_change_rate_ci95": [
+   0.056554,
+   0.08929
+  ]
+ },
+ "how_to_replay": {
+  "expect": "Counts drift upward between snapshots as new markets settle — that is why every rate here is stamped with the window it was measured over. Two snapshots are only comparable through their windows.",
+  "source": "UMA official Polygon Optimistic Oracle V2 subgraph (public endpoint, in `coverage.source`)",
+  "steps": [
+   "Page optimisticPriceRequests filtered to the three canonical Polymarket requester adapters in `coverage.canonical_requesters`, state:Settled.",
+   "Group requests by the market_id carried in the decoded ancillary data; multiple oracle rounds on one market collapse to one row.",
+   "Rebuild each market's rule template with `rule_feature_definitions`: lowercase `title\\n description`, substring-match every needle, join the active feature names with '+', or 'plain' when none fire.",
+   "A market counts as disputed when its request carries a disputer.",
+   "proposal_changed compares settlementPrice against proposedPrice, excluding the TOO_EARLY sentinel on either side."
+  ]
+ },
+ "min_n_reportable": 100,
+ "refresh_cadence": "UMA backfill on a 6h timer; this snapshot is reshaped from the most recent completed backfill. Read source_generated_at, not generated_at, when citing the numbers.",
+ "rule_feature_definitions": {
+  "long_rules_chars": 1200,
+  "method": "case-insensitive substring match over `title\\n description`; template = the active features joined by '+', or 'plain' when none fire",
+  "needles": {
+   "explicit_source": [
+    "resolution source",
+    "according to",
+    "reported by",
+    "https://",
+    "http://"
+   ],
+   "fallback_clause": [
+    "otherwise",
+    "if no ",
+    "in the event",
+    "will resolve to other",
+    "will resolve 50"
+   ],
+   "multi_source": [
+    "however, a consensus",
+    "multiple sources",
+    "any credible",
+    "overwhelming consensus"
+   ],
+   "revision_clause": [
+    "revision",
+    "revised",
+    "initial release",
+    "preliminary",
+    "final value"
+   ],
+   "subjective_language": [
+    "credible reporting",
+    "consensus",
+    "significant",
+    "substantial",
+    "officially",
+    "widely recognized",
+    "reasonable"
+   ],
+   "timezone_boundary": [
+    " utc",
+    " et",
+    " est",
+    " edt",
+    "local time",
+    "11:59",
+    "midnight",
+    "timezone"
+   ]
+  }
+ },
+ "schema": "marketflow-settlement-quality-public-v0.1",
+ "source_age_hours": 141.3,
+ "source_generated_at": "2026-08-13T06:53:45Z",
+ "source_stale": true,
+ "window": {
+  "basis": "requested_at / settled_at over every settled canonical-adapter request",
+  "from": "2023-12-05T00:20:44Z",
+  "to": "2026-08-12T10:45:34Z"
+ }
+}
