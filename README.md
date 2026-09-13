@@ -49,7 +49,7 @@ Trader addresses, usernames and wallet lists are omitted. Contract-pair labels r
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff). Archived release **v0.1.1**: [DOI 10.5281/zenodo.22733782](https://doi.org/10.5281/zenodo.22733782).
+See [CITATION.cff](CITATION.cff). Archived release **v0.1.2**: [DOI 10.5281/zenodo.22734802](https://doi.org/10.5281/zenodo.22734802).
 
 ## Licence
 

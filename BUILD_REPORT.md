@@ -104,3 +104,5 @@ The reviewed repository is public under ailinsun/MarketFlow. Release v0.1.1 is a
 ## Attribution correction
 
 Public author: Ailin Sun, independent researcher. Repository: MarketFlow. Current files, embedded citations, schema namespaces and instrument identifiers use the corrected attribution. All 11,647 numerical and boolean data values and measurement-number tokens in the retained reports remain unchanged. The methodology charter now describes experimental research review. Earlier repository commits and frozen archives remain historical copies; metadata edits alone do not replace their file contents.
+
+Corrected release: [v0.1.2](https://github.com/ailinsun/MarketFlow/releases/tag/v0.1.2), [DOI 10.5281/zenodo.22734802](https://doi.org/10.5281/zenodo.22734802). The prior record metadata was also corrected to Sun, Ailin with no affiliation.
