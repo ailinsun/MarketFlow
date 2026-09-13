@@ -35,7 +35,7 @@ Aggregate consistency is verified; the historical raw datasets and complete orig
 
 ## History handling
 
-The two original local commits include material removed by this review. Publish only the new reviewed root history. The original export is retained separately for local recovery; neither its branch nor its objects should be pushed or bundled into a release. No remote history has been rewritten. The pair schema retains its constraints with a valid public URI identifier.
+The two original local commits include material removed by this review. Publish only the new reviewed root history. The original export is retained separately for local recovery; neither its branch nor its objects should be pushed or bundled into a release. The obsolete reachable publication history was replaced at the author's request. Use the current public branch and tag; do not merge older local histories. The pair schema retains its constraints with a valid public URI identifier.
 
 ## Removed or moved files
 
@@ -99,10 +99,10 @@ The two original local commits include material removed by this review. Publish 
 
 ## Publication result
 
-The reviewed repository is public under ailinsun/MarketFlow. Release v0.1.1 is archived at [DOI 10.5281/zenodo.22733782](https://doi.org/10.5281/zenodo.22733782). All three Hugging Face data mirrors are public with CC BY 4.0 dataset cards and licences. Public downloads of the prepared files matched the reviewed local files byte for byte. The README links the data mirrors. The detailed execution record remains in the uncommitted PUBLISH_REPORT.md.
+The reviewed repository is public under ailinsun/MarketFlow. Release v0.1.1 was archived at [DOI 10.5281/zenodo.22733782](https://doi.org/10.5281/zenodo.22733782). That obsolete archive was subsequently withdrawn. All three Hugging Face data mirrors use CC BY 4.0 dataset cards and licences. Public downloads of the prepared files matched the reviewed local files byte for byte. The README links the data mirrors. The detailed execution record remains in the uncommitted PUBLISH_REPORT.md.
 
 ## Attribution correction
 
-Public author: Ailin Sun, independent researcher. Repository: MarketFlow. Current files, embedded citations, schema namespaces and instrument identifiers use the corrected attribution. All 11,647 numerical and boolean data values and measurement-number tokens in the retained reports remain unchanged. The methodology charter now describes experimental research review. Earlier repository commits and frozen archives remain historical copies; metadata edits alone do not replace their file contents.
+Public author: Ailin Sun, independent researcher. Repository: MarketFlow. Current files, embedded citations, schema namespaces and instrument identifiers use the corrected attribution. All 11,647 numerical and boolean data values and measurement-number tokens in the retained reports remain unchanged. The methodology charter now describes experimental research review. Reachable repository history has been rebuilt from the corrected files, and the obsolete archive has been withdrawn. Platform caches and external archives require separate verification; clean reachable history alone does not establish their removal.
 
 Corrected release: [v0.1.2](https://github.com/ailinsun/MarketFlow/releases/tag/v0.1.2), [DOI 10.5281/zenodo.22734802](https://doi.org/10.5281/zenodo.22734802). The prior record metadata was also corrected to Sun, Ailin with no affiliation.
