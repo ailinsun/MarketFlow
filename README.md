@@ -1,6 +1,15 @@
 # MarketFlow
 
-Research instruments, frozen aggregate snapshots and original working reports on Polymarket order flow, event-contract fees, repeated trading patterns and UMA settlement. These are experimental studies conducted by Ailin Sun as an independent researcher in 2026. This repository preserves historical measurements and provides offline checks of the published aggregates and methods.
+**Research on Polymarket prediction markets: order flow, market microstructure,
+event-contract fees, repeated trading patterns, and UMA resolution.**
+
+**Flagship paper:**  
+*The Friction Ledger: A Zero-Sum Accounting of Polymarket Order Flow and the Geometry of Event-Contract Fees* — SSRN
+
+**Sample:** 1,338,933 BUY-side fills · 439 settled markets · $419.4M buy notional
+
+MarketFlow contains frozen aggregate snapshots, research instruments,
+verification scripts, and working reports by Ailin Sun.
 
 ## The ledger
 
