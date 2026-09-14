@@ -99,6 +99,8 @@ def main() -> int:
     with open(args.farm, encoding="utf-8") as fh:
         farm = set(json.load(fh)["farm_wallets"])
     agg = wallet_aggregates(args.tape)
+    if not agg:
+        ap.error("No usable BUY fills were found in the supplied tape.")
     result = audit(agg, farm)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     tmp = args.out + ".tmp"

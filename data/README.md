@@ -52,7 +52,7 @@ The original snapshot generators read intermediate outputs that are not distribu
 
 The ledger contains an original metadata inconsistency: `method.truncation` says “earliest first”, while `how_to_replay.caveats` and the collector notes say newest-first. Those original strings and all numbers are preserved; the public README follows the explicit newest-first observation. Settlement files with different generated dates can describe the same source window; do not treat them as independent samples.
 
-Original citation URLs below describe the historical publisher locations and have not been repointed or asserted to remain live. Use the repository release and filename as the accessible copy of this redacted export.
+The embedded citation blocks below point to the public repository and its archived release. Cite the versioned snapshot and filename, rather than treating a rolling pointer as a new observation.
 
 ## Protocol address allowlist
 

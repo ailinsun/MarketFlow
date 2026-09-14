@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import re
 import subprocess
@@ -11,12 +12,16 @@ from pathlib import Path
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
+REVIEWED_IMAGES = {
+    "assets/marketflow.png": "3a17ac7d2184d746583c1611f2a1eb06e5ce66ba131347d379bc9e49169fe9b0",
+}
 ADDRESSES = {
     "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7",
     "0x69c47de9d4d3dad79590d61b9e05918e03775f24",
     "0x2f5e3684cb1f318ec51b00edba38d79ac2c0aa9d",
 }
 PATTERNS = {
+    "retired attribution": r"\b(?:N[o]ara|I[r]ene|S[I]LT\s+LLC)\b",
     "local home path": r"/(?:Users|home)[/][^\s\"'<>]+",
     "private path": r"(?:runtime|scratchpad)[/]|(?:\.\./)+(?:docs|outputs|workbench)[/]",
     "IPv4 address": r"(?<![\w.])(?:\d{1,3}(?:\\?\.)+){3}\d{1,3}(?![\w.])",
@@ -33,6 +38,8 @@ PATTERNS = {
 def scan_text(name: str, content: str) -> list[str]:
     hits = []
     for number, line in enumerate(content.splitlines(), 1):
+        if name.startswith(".github/workflows/"):
+            line = re.sub(r"\$\{\{ matrix\.python \}\}", "matrix value", line)
         for label, pattern in PATTERNS.items():
             if re.search(pattern, line, re.I):
                 hits.append(f"{name}:{number}: {label}")
@@ -40,12 +47,24 @@ def scan_text(name: str, content: str) -> list[str]:
             if address.lower() not in ADDRESSES:
                 hits.append(f"{name}:{number}: non-allowlisted address")
         for email in re.findall(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}",line):
-            if email != "237421509+ailinsun@users.noreply.github.com":
+            if email not in {"237421509+ailinsun@users.noreply.github.com", "noreply@github.com"}:
                 hits.append(f"{name}:{number}: unapproved email")
-        without_email = line.replace("237421509+ailinsun@users.noreply.github.com", "")
+        without_email = line.replace("237421509+ailinsun@users.noreply.github.com", "").replace("noreply@github.com", "")
+        without_email = re.sub(r"(?<=@)[0-9a-f]{40}\b", "", without_email)
         if re.search(r"(?<![\w])@[A-Za-z][A-Za-z0-9_]{2,}", without_email) and not re.match(r"\s*@(?:dataclass|staticmethod|classmethod|property)\b", line):
             hits.append(f"{name}:{number}: handle")
     return hits
+
+
+def scan_blob(name: str, content: bytes) -> list[str]:
+    if name in REVIEWED_IMAGES:
+        if hashlib.sha256(content).hexdigest() != REVIEWED_IMAGES[name]:
+            return [name + ": image changed; explicit review required"]
+        return []
+    try:
+        return scan_text(name, content.decode("utf-8"))
+    except UnicodeDecodeError:
+        return [name + ": binary file requires explicit review"]
 
 
 def check(root: Path, history: bool = False) -> list[str]:
@@ -60,6 +79,9 @@ def check(root: Path, history: bool = False) -> list[str]:
             continue
         if p.suffix == ".pyc" or p.name == ".DS_Store" or p.name.endswith("~"):
             hits.append(name + ": generated/editor file")
+        if name in REVIEWED_IMAGES:
+            hits.extend(scan_blob(name, p.read_bytes()))
+            continue
         try: content = p.read_text()
         except UnicodeDecodeError:
             hits.append(name + ": binary file requires explicit review")
@@ -86,7 +108,7 @@ def check(root: Path, history: bool = False) -> list[str]:
         if any("list" in d[k] for k in ("raw", "clean")):
             hits.append(p.name + ": per-wallet list")
     if history:
-        commits = subprocess.check_output(["git", "rev-list", "HEAD"], cwd=root, text=True).splitlines()
+        commits = subprocess.check_output(["git", "rev-list", "--all"], cwd=root, text=True).splitlines()
         seen = set()
         for commit in commits:
             meta = subprocess.check_output(["git", "show", "-s", "--format=%an <%ae>%n%cn <%ce>%n%B", commit],cwd=root,text=True)
@@ -95,10 +117,10 @@ def check(root: Path, history: bool = False) -> list[str]:
             for entry in entries:
                 info,name = entry.split('\t',1)
                 oid=info.split()[-1]
-                if oid in seen: continue
-                seen.add(oid)
-                content = subprocess.check_output(["git","cat-file","blob",oid],cwd=root).decode("utf-8",errors="replace")
-                hits.extend(scan_text(name + " (history)",content))
+                if (name, oid) in seen: continue
+                seen.add((name, oid))
+                content = subprocess.check_output(["git","cat-file","blob",oid],cwd=root)
+                hits.extend(hit + " (history)" for hit in scan_blob(name, content))
     return sorted(set(hits))
 
 

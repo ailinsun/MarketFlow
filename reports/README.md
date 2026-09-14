@@ -2,7 +2,7 @@
 
 Historical working documents, with measurements preserved and unavailable private references converted to plain text. Their status statements refer to the original research dates, not the current project. Recommendations and fee assumptions are historical. A passed instrument self-test does not validate every report claim.
 
-The publication kit currently identifies the English articles as drafts awaiting audit; no Task Book A completion evidence was found. Only the existing whale report is included in English.
+Only the whale report is included in English; the other retained reports are original Chinese working documents.
 
 | Report | English description | Document date | Observation window | Reproducibility | Public backing |
 |---|---|---|---|---|---|

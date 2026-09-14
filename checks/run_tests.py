@@ -70,6 +70,11 @@ def main():
         assert ledger["usd"]["taker_net"]==4.88
         assert ledger["sample"]["trades_used"]==1
         assert set(ledger["sample"]["dropped_trades"].values())=={1}
+        (d/"empty.jsonl").write_text("")
+        (d/"farm.json").write_text(json.dumps({"farm_wallets": []}))
+        result = run(ROOT/"instruments/farm_rank_audit.py", "--tape", str(d/"empty.jsonl"), "--farm", str(d/"farm.json"), "--out", str(d/"rank.json"), expected=2)
+        assert "No usable BUY fills" in result.stderr
+        assert not (d/"rank.json").exists()
         feeds=[{"wallet":f"synthetic-{i}","wallet_label":"synthetic","condition_id":"example","side":"BUY","price":.999,"size":100,"ts_source_ms":1000} for i in range(5) for _ in range(4)]
         (d/"feed.jsonl").write_text("\n".join(json.dumps(r) for r in feeds))
         out=run(ROOT/"instruments/polymarket_farm_filter.py","--path",str(d/"feed.jsonl"))

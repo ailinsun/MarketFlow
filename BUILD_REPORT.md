@@ -106,3 +106,9 @@ The reviewed repository is public under ailinsun/MarketFlow. Release v0.1.1 was 
 Public author: Ailin Sun, independent researcher. Repository: MarketFlow. Current files, embedded citations, schema namespaces and instrument identifiers use the corrected attribution. All 11,647 numerical and boolean data values and measurement-number tokens in the retained reports remain unchanged. The methodology charter now describes experimental research review. Reachable repository history has been rebuilt from the corrected files, and the obsolete archive has been withdrawn. Platform caches and external archives require separate verification; clean reachable history alone does not establish their removal.
 
 Corrected release: [v0.1.2](https://github.com/ailinsun/MarketFlow/releases/tag/v0.1.2), [DOI 10.5281/zenodo.22734802](https://doi.org/10.5281/zenodo.22734802). The prior record metadata was also corrected to Sun, Ailin with no affiliation.
+
+## Sharing readiness review
+
+Reviewed 2026-09-14. The author-supplied cover is included unchanged; its three displayed sample figures agree with the ledger summary. The PNG contains only image/palette chunks and no text or EXIF metadata. Publication checks accept only this image's reviewed digest and reject other binary files.
+
+The current README introduction and paper reference were preserved. Research discovery links, a concise correction/contribution guide and offline CI were added. The privacy checker now scans all reachable refs and recognizes GitHub's platform-generated commit identity. Empty farm-rank input fails clearly before writing output. Existing self-tests, offline help, reproduction commands and the empty-input regression check pass locally. Scientific data files and retained report bodies are unchanged.

@@ -1,10 +1,14 @@
 # MarketFlow
 
+![MarketFlow — Polymarket order flow research by Ailin Sun](assets/marketflow.png)
+
+[![Research checks](https://github.com/ailinsun/MarketFlow/actions/workflows/checks.yml/badge.svg)](https://github.com/ailinsun/MarketFlow/actions/workflows/checks.yml) · [Paper on SSRN](https://papers.ssrn.com/abstract=7453738) · [Archived release](https://doi.org/10.5281/zenodo.22734802)
+
 **Research on Polymarket prediction markets: order flow, market microstructure,
 event-contract fees, repeated trading patterns, and UMA resolution.**
 
 **Flagship paper:**  
-*The Friction Ledger: A Zero-Sum Accounting of Polymarket Order Flow and the Geometry of Event-Contract Fees* — SSRN
+*[The Friction Ledger: A Zero-Sum Accounting of Polymarket Order Flow and the Geometry of Event-Contract Fees](https://papers.ssrn.com/abstract=7453738)* — SSRN
 
 **Sample:** 1,338,933 BUY-side fills · 439 settled markets · $419.4M buy notional
 
@@ -65,5 +69,7 @@ See [CITATION.cff](CITATION.cff). Archived release **v0.1.2**: [DOI 10.5281/zeno
 Code: [Apache-2.0](LICENSE). Data, reports and research documentation: [CC BY 4.0](LICENSE-DATA). Upstream venue material retains its own terms and rights.
 
 ## Author
+
+For corrections or method questions, see [contribution guidance](.github/CONTRIBUTING.md).
 
 Ailin Sun · [LinkedIn](https://www.linkedin.com/in/ailinsun/).
