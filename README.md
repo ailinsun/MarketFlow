@@ -1,4 +1,5 @@
 # MarketFlow
+Polymarket order flow and market microstructure research
 
 **Research on Polymarket prediction markets: order flow, market microstructure,
 event-contract fees, repeated trading patterns, and UMA resolution.**
