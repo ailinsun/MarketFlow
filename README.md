@@ -1,5 +1,3 @@
-# MarketFlow
-
 ![MarketFlow — Polymarket order flow research by Ailin Sun](assets/marketflow.png)
 
 [![Research checks](https://github.com/ailinsun/MarketFlow/actions/workflows/checks.yml/badge.svg)](https://github.com/ailinsun/MarketFlow/actions/workflows/checks.yml) · [Paper on SSRN](https://papers.ssrn.com/abstract=7453738) · [Archived release](https://doi.org/10.5281/zenodo.22734802)
