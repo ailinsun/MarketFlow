@@ -13,6 +13,7 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 REVIEWED_IMAGES = {
+    "assets/marketflow-social.jpg": "3dc37282df8e99684208ec563b0b7b4194d2822f3b64156c5ea32d51afdbe59b",
     "assets/marketflow.png": "3a17ac7d2184d746583c1611f2a1eb06e5ce66ba131347d379bc9e49169fe9b0",
 }
 ADDRESSES = {
