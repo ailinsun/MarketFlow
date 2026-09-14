@@ -5,9 +5,6 @@
 **Research on Polymarket prediction markets: order flow, market microstructure,
 event-contract fees, repeated trading patterns, and UMA resolution.**
 
-**Flagship paper:**  
-*[The Friction Ledger: A Zero-Sum Accounting of Polymarket Order Flow and the Geometry of Event-Contract Fees](https://papers.ssrn.com/abstract=7453738)* — SSRN
-
 **Sample:** 1,338,933 BUY-side fills · 439 settled markets · $419.4M buy notional
 
 MarketFlow contains frozen aggregate snapshots, research instruments,
