@@ -1,0 +1,13 @@
+{
+  "_comment": "Secondary path: limit BUY to open exposure. Hard-capped by S1 DEFAULT_MAX_PER_TRADE_USD and DEFAULT_MAX_TOTAL_DEPLOY_USD. Runs dry_run unless --live AND the unified arm-state is valid.",
+  "action": "ENTER",
+  "side": "BUY",
+  "order_kind": "limit",
+  "token_id": "REPLACE_WITH_TARGET_TOKEN_ID",
+  "price": 0.5,
+  "size": 2,
+  "post_only": false,
+  "market_slug": "optional-market-slug-for-context",
+  "outcome": "YES",
+  "note": "entry thesis / confidence goes here"
+}

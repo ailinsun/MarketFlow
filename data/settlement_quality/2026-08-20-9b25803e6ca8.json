@@ -346,14 +346,14 @@
  "changelog": [],
  "citation": {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-20), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-20), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-20"

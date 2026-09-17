@@ -29,4 +29,4 @@
 
 对外引用本对照时: 数字必须与「资格不受影响 / top 段仍是真实交易者」的对偶面同句;
 更正稿 draft 见验收包 260812_positioning-alignment-audit.md (unpublished editorial material),
-发不发归 Ailin Sun。
+发不发由维护者决定。

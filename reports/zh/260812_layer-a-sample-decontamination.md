@@ -352,4 +352,4 @@ python3 unpublished research artifact --max-ts 1786406400 && python3 unpublished
   (集中度 / 断点 / 毒性分组) 不依赖它的绝对标定。
 - **未验证 8/7 结算换 TWAP 的官方原文** (260802 已记: 官方 changelog 停在 07-17, 该说法是
   四家二手转述)。安慰剂检验的结论 (不是 8/7 的断点) 不依赖这条真伪。
-- **任务 B / D 未做** —— B 需 Ailin Sun 明确批准并走 arm-state + caps, D 的前置 (B-J1/B-J2) 未过。
+- **任务 B / D 未做** —— B 需维护者明确批准并走 arm-state + caps, D 的前置 (B-J1/B-J2) 未过。

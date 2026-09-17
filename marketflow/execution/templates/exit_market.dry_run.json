@@ -1,0 +1,13 @@
+{
+  "_comment": "Exit-first primary path: bounded market SELL to close a held position. Replace token_id/held_shares/min_price from the private snapshot + bid sweep. Runs dry_run unless --live AND the unified arm-state is valid.",
+  "action": "EXIT",
+  "side": "SELL",
+  "order_kind": "market",
+  "token_id": "REPLACE_WITH_HELD_TOKEN_ID",
+  "held_shares": 0,
+  "market_order_type": "FOK",
+  "min_price": 0.01,
+  "market_slug": "optional-market-slug-for-context",
+  "outcome": "YES",
+  "note": "exit trigger reason goes here"
+}

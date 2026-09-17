@@ -1,6 +1,6 @@
 # Experimental research methodology
 
-MarketFlow contains experimental studies by Ailin Sun, an independent researcher. AI tools assist with analysis, coding and review; the author remains responsible for public claims and corrections.
+MarketFlow is an independent research and engineering project. AI tools assist with analysis, coding and review; the maintainer remains responsible for public claims and corrections.
 
 ## Evidence
 

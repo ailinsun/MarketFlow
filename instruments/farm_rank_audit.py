@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compare farm shares when the same wallets are ranked by dollars or activity.
 
-排序口径审计：给定同一份逐笔数据和模式名单，按买入额与笔数乘市场数分别排序。
+Ranking-convention audit: given one tape and one pattern list, rank wallets by buy
+notional and by trade count times market breadth, and compare the two answers.
 This script preserves the original aggregation and counting method. It accepts
 local files and writes aggregate counts only; the original wallet list and tape
 are not distributed. Use --selftest for a synthetic example.
@@ -22,7 +23,8 @@ DEFAULT_TOPS = (100, 500, 1000, 5000)
 
 
 def wallet_aggregates(tape_path: str) -> dict[str, dict]:
-    """每个钱包的买入额 / 笔数 / 市场广度。只看 BUY —— 卖出腿是同一笔的镜像。"""
+    """Per wallet: buy notional, trade count, market breadth. BUY side only, because
+    the sell leg of the same fill is its mirror and would double-count."""
     buy: dict[str, float] = collections.defaultdict(float)
     nt: collections.Counter = collections.Counter()
     mk: dict[str, set] = collections.defaultdict(set)
@@ -75,7 +77,7 @@ def audit(agg: dict[str, dict], farm: set[str], tops=DEFAULT_TOPS) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="排序口径审计 (read-only)")
+    ap = argparse.ArgumentParser(description="Ranking-convention audit (read-only)")
     ap.add_argument("--tape", default=TAPE)
     ap.add_argument("--farm", default=FARM_TAPE)
     ap.add_argument("--out", default=OUT)
@@ -107,12 +109,13 @@ def main() -> int:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=1, sort_keys=True)
     os.replace(tmp, args.out)
-    print(f"{result['wallets_with_buys']:,} 钱包 / 农场名单 {result['farm_wallets_in_list']:,} / "
+    print(f"{result['wallets_with_buys']:,} wallets / pattern list "
+          f"{result['farm_wallets_in_list']:,} / "
           f"baseline {result['baseline_farm_share']:.2%}")
     for k, v in result["by_top_n"].items():
-        print(f"  {k:<9} 按成交额 {v['by_dollar_volume']['farm_share']:>7.2%} | "
-              f"按笔数×广度 {v['by_activity_x_breadth']['farm_share']:>6.2%} | "
-              f"倍差 {v['ratio_x']}")
+        print(f"  {k:<9} by notional {v['by_dollar_volume']['farm_share']:>7.2%} | "
+              f"by count x breadth {v['by_activity_x_breadth']['farm_share']:>6.2%} | "
+              f"ratio {v['ratio_x']}")
     print(f"→ {args.out}")
     return 0
 

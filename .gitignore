@@ -3,6 +3,10 @@ __pycache__/
 .DS_Store
 *.log
 .venv/
+.env
+runtime/
 data/inputs/
 data/generated/
-PUBLISH_REPORT.md
+build/
+dist/
+*.egg-info/

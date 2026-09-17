@@ -1,0 +1,24 @@
+# Dependencies for the signing layer (marketflow/guardian) only.
+#
+# The rest of MarketFlow is deliberately standard-library-only, so installing this
+# file is opt-in: a deployment that never signs an order never installs any of it.
+# Versions are pinned rather than ranged because a rebuild must not silently change
+# code that produces signatures.
+
+# --- key generation and encryption at rest ---
+cryptography==50.0.0
+eth-account==0.13.7
+
+# --- venue SDK (order signing and CLOB access) ---
+# The official Polymarket SDK, not the archived py-clob-client. It is not published
+# to PyPI, so it installs from a pinned commit. Verify the commit yourself before
+# trusting it with a key; the moving default branch is deliberately not used.
+polymarket-client @ git+https://github.com/Polymarket/py-sdk@f95aba1e622fa88aa2bba0583cb103629c6458c0
+
+# --- transitive, pinned for reproducible builds ---
+eth-abi==5.2.0
+eth-utils==5.3.1
+httpx[http2]==0.28.1
+h2==4.4.1
+pydantic==2.13.4
+websockets==15.0.1
