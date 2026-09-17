@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
-"""Run every instrument self-test, offline help checks and aggregate verification."""
+"""Run every self-test in the repository with the network switched off.
+
+Two families are covered by the same runner, under the same audit hook:
+
+  * `instruments/` and `checks/`, invoked as scripts, plus the frozen-aggregate
+    verification and the synthetic end-to-end input flows;
+  * the `marketflow` package, invoked as modules.
+
+The audit hook records a socket or urllib attempt even when the module under test
+catches the exception, so "the self-test passed" cannot quietly mean "it reached
+the internet and got an answer it liked".
+
+A package module whose third-party dependency is not installed is reported as
+skipped rather than failed: the core is standard-library-only by design, and the
+signing layer is an opt-in install.
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # Audit hooks record attempts even if an instrument catches the exception.
-WRAPPER = '''import sys, runpy
+_GUARD = '''import sys
 attempts = []
 def guard(event, args):
     if event.startswith("socket.") or event == "urllib.Request":
@@ -19,6 +34,9 @@ def guard(event, args):
         raise RuntimeError("Network disabled by the offline test runner")
 sys.addaudithook(guard)
 sys.dont_write_bytecode = True
+'''
+
+WRAPPER = _GUARD + '''import runpy
 sys.argv = sys.argv[1:]
 sys.path.insert(0, str(__import__("pathlib").Path(sys.argv[0]).parent))
 code = 0
@@ -31,12 +49,51 @@ if attempts:
 raise SystemExit(code)
 '''
 
+MODULE_WRAPPER = _GUARD + '''import runpy
+module = sys.argv[1]
+sys.argv = sys.argv[1:]
+code = 0
+try:
+    runpy.run_module(module, run_name="__main__", alter_sys=True)
+except SystemExit as exc:
+    code = exc.code or 0
+except ModuleNotFoundError as exc:
+    print("MISSING_DEPENDENCY:" + (exc.name or "?"))
+    raise SystemExit(0)
+if attempts:
+    raise SystemExit("Network attempt during offline test")
+raise SystemExit(code)
+'''
+
 
 def run(path: Path, *args: str, expected: int = 0) -> subprocess.CompletedProcess:
-    p = subprocess.run([sys.executable, "-B", "-c", WRAPPER, str(path), *args],cwd=ROOT,capture_output=True,text=True,timeout=30)
+    p = subprocess.run([sys.executable, "-B", "-c", WRAPPER, str(path), *args],cwd=ROOT,capture_output=True,text=True,timeout=120)
     if p.returncode != expected:
         raise AssertionError(path.name + ": " + " ".join(args) + " failed: " + p.stderr[-500:])
     return p
+
+
+def run_module(module: str, *args: str) -> tuple[str, str]:
+    """Run one package module's self-test. Returns (status, detail)."""
+    p = subprocess.run([sys.executable, "-B", "-c", MODULE_WRAPPER, module, *args],
+                       cwd=ROOT, capture_output=True, text=True, timeout=300)
+    if "MISSING_DEPENDENCY:" in p.stdout:
+        name = p.stdout.split("MISSING_DEPENDENCY:", 1)[1].split()[0]
+        return "SKIP", f"needs {name} (pip install -r requirements-signing.txt)"
+    if p.returncode != 0:
+        return "FAIL", (p.stderr or p.stdout)[-700:]
+    return "PASS", ""
+
+
+def package_selftest_modules() -> list[str]:
+    """Every marketflow module that declares a --selftest entry point."""
+    out = []
+    for path in sorted((ROOT / "marketflow").rglob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        if "--selftest" in path.read_text():
+            out.append(str(path.relative_to(ROOT).with_suffix("")).replace("/", "."))
+    return out
 
 
 def main():
@@ -82,6 +139,46 @@ def main():
         assert summary["farm_wallets"]==5
         assert "synthetic" not in out.stdout and "old_list" not in out.stdout and "new_list" not in out.stdout
     print("PASS end-to-end input handling, drop accounting and aggregate-only farm output")
+
+    failures, skipped = [], []
+    for module in package_selftest_modules():
+        status, detail = run_module(module, "--selftest")
+        print(f"{status} package self-test: {module}" + (f"  [{detail}]" if detail else ""))
+        if status == "FAIL":
+            failures.append((module, detail))
+        elif status == "SKIP":
+            skipped.append(module)
+
+    # The signing layer keeps its suites in dedicated runners rather than a
+    # --selftest flag, because they need the optional third-party install.
+    for module in ("marketflow.guardian.selftest", "marketflow.guardian.phase1_selftest"):
+        status, detail = run_module(module)
+        print(f"{status} suite: {module}" + (f"  [{detail}]" if detail else ""))
+        if status == "FAIL":
+            failures.append((module, detail))
+        elif status == "SKIP":
+            skipped.append(module)
+
+    unit = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests",
+                           "-t", "."], cwd=ROOT, capture_output=True, text=True, timeout=300)
+    if unit.returncode != 0:
+        failures.append(("tests/", unit.stderr[-700:]))
+        print("FAIL unit tests (tests/)")
+    else:
+        print("PASS unit tests (tests/): " + unit.stderr.strip().splitlines()[-1])
+
+    demo = ROOT / "examples/portfolio_risk_demo.py"
+    if demo.exists():
+        run(demo)
+        print("PASS runnable demonstration (examples/portfolio_risk_demo.py)")
+
+    if failures:
+        for module, detail in failures:
+            print(f"\n--- {module} ---\n{detail}", file=sys.stderr)
+        raise SystemExit(f"{len(failures)} package self-test(s) failed")
+    if skipped:
+        print(f"\nNOTE {len(skipped)} module(s) skipped for an uninstalled optional "
+              f"dependency: {', '.join(skipped)}")
 
 
 if __name__ == "__main__":

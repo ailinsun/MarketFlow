@@ -1,4 +1,4 @@
-name: Research checks
+name: Verify
 on:
   push:
   pull_request:
@@ -6,10 +6,14 @@ on:
 permissions:
   contents: read
 jobs:
-  offline:
+  # The same command a reader runs locally. CI must not have its own universe of
+  # checks: if `make verify` passes here and fails on a clean checkout, the badge
+  # is lying.
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         python: ['3.9', '3.13']
     steps:
@@ -20,6 +24,40 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python }}
-      - run: make check
-      - run: make test
-      - run: python3 -B checks/check_public.py --history
+      # No install step: the core is standard library only, and a CI run that
+      # needed pip would have quietly stopped proving that.
+      - run: make verify
+      - run: make history
+      - run: make demo
+
+  # The signing layer is an opt-in install, so its suites run in their own job.
+  # `make verify` reports them as skipped rather than passed when absent.
+  signing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true      # the venue SDK installs from a pinned git commit
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements-signing.txt
+      - run: python3 -B -m marketflow.guardian.selftest
+      - run: python3 -B -m marketflow.guardian.phase1_selftest
+      - run: python3 -B -m unittest discover -s tests -t .
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # An independent second layer. The publication gate matches patterns it was
+      # told about; a secret scanner catches shapes nobody thought to list.
+      - uses: gitleaks/gitleaks-action@83373cf2f8c4db6e24b41c1a9b086bb9619e9cd3 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
