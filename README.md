@@ -197,9 +197,11 @@ parts have never been exercised in production.
 
 Code: [Apache-2.0](LICENSE). Data, reports and research documentation:
 [CC BY 4.0](LICENSE-DATA). Venue material obtained through an API retains its own
-terms. Citation metadata is in [CITATION.cff](CITATION.cff); the archived research
-release is [DOI 10.5281/zenodo.22734802](https://doi.org/10.5281/zenodo.22734802), and
-the accompanying paper is [on SSRN](https://papers.ssrn.com/abstract=7453738).
+terms. Citation metadata is in [CITATION.cff](CITATION.cff). Cite
+[DOI 10.5281/zenodo.22733781](https://doi.org/10.5281/zenodo.22733781), which always
+resolves to the most recent archived version, or
+[10.5281/zenodo.22817146](https://doi.org/10.5281/zenodo.22817146) for this release
+specifically. The accompanying paper is [on SSRN](https://papers.ssrn.com/abstract=7453738).
 
 Corrections and method questions are welcome through
 [the issue tracker](https://github.com/ailinsun/MarketFlow/issues); see

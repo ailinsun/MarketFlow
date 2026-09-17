@@ -20,7 +20,13 @@ version: 0.2.0
 date-released: 2026-09-17
 license: Apache-2.0
 repository-code: "https://github.com/ailinsun/MarketFlow"
+# The concept DOI. It always resolves to the most recent archived version, so it is
+# the citation target to prefer unless a specific version is meant.
+doi: "10.5281/zenodo.22733781"
 identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22817146"
+    description: "Archived release v0.2.0"
   - type: doi
     value: "10.5281/zenodo.22734802"
     description: "Archived research-only release v0.1.2"
