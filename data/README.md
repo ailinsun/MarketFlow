@@ -4,7 +4,7 @@ Frozen research snapshots and schemas; filenames and all numerical JSON values a
 
 No raw trading tape, wallet lists or collector caches are distributed. The whale exposure table keeps its numerical rows with address and label fields omitted. The clean-ranking release contains aggregates without either per-wallet list.
 
-All rows below use **CC BY 4.0** for the original compilation/annotations; upstream venue material retains its applicable rights. A file with an embedded citation block should be cited with that complete block, copied below. Otherwise cite Ailin Sun, this repository release and the exact filename; no missing citation block has been invented.
+All rows below use **CC BY 4.0** for the original compilation/annotations; upstream venue material retains its applicable rights. A file with an embedded citation block should be cited with that complete block, copied below. Otherwise cite the authors named in CITATION.cff, this repository release and the exact filename; no missing citation block has been invented.
 
 | File | What it is | Window or observation date | Source | Licence | Citation |
 |---|---|---|---|---|---|
@@ -70,14 +70,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "adjusted-ranking-snapshot",
-  "how_to_cite": "Ailin Sun. \"Polymarket wallet ranking, farm-filtered.\" Version 04fd708f9336 (2026-09-01), window 2026-07-06 to 2026-09-01. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket wallet ranking, farm-filtered.\" Version 04fd708f9336 (2026-09-01), window 2026-07-06 to 2026-09-01. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "clean-data-v0.2",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket wallet ranking, farm-filtered",
   "version": "04fd708f9336",
   "version_date": "2026-09-01"
@@ -92,14 +92,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-13), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-13-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-13), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-13-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-13-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-13"
@@ -114,14 +114,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-14), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-14-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-14), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-14-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-14-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-14"
@@ -136,14 +136,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-15), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-15-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-15), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-15-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-15-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-15"
@@ -158,14 +158,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-16), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-16-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-16), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-16-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-16-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-16"
@@ -180,14 +180,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-17), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-17-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-17), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-17-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-17-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-17"
@@ -202,14 +202,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-18), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-18-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-18), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-18-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-18-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-18"
@@ -224,14 +224,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-19), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-19-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-19), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-19-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-19-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-19"
@@ -246,14 +246,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-20), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-20), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-20-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-20"
@@ -268,14 +268,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-21), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-21-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-21), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-21-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-21-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-21"
@@ -290,14 +290,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-22), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-22-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-22), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-22-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-22-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-22"
@@ -312,14 +312,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-23), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-23-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-23), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-23-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-23-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-23"
@@ -334,14 +334,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-24), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-24-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-24), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-24-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-24-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-24"
@@ -356,14 +356,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-25), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-25-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-25), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-25-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-25-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-25"
@@ -378,14 +378,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-26), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-26-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-26), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-26-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-26-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-26"
@@ -400,14 +400,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-27), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-27-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-27), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-27-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-27-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-27"
@@ -422,14 +422,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-28), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-28-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-28), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-28-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-28-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-28"
@@ -444,14 +444,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-29), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-29-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-29), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-29-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-29-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-29"
@@ -466,14 +466,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-30), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-30-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-30), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-30-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-30-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-30"
@@ -488,14 +488,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-31), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-31-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-08-31), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-31-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-08-31-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-08-31"
@@ -510,14 +510,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-09-01), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-09-01), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-09-01"
@@ -532,14 +532,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "settlement-quality-register",
-  "how_to_cite": "Ailin Sun. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-09-01), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket settlement quality register.\" Version 9b25803e6ca8 (2026-09-01), window 2023-12-05 to 2026-08-12. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/settlement_quality/2026-09-01-9b25803e6ca8.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/settlement_quality/settlement_quality.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "settlement-quality-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket settlement quality register",
   "version": "9b25803e6ca8",
   "version_date": "2026-09-01"
@@ -554,14 +554,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "prediction-market-zero-sum-ledger",
-  "how_to_cite": "Ailin Sun. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/zero_sum_ledger/zero_sum_ledger.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "zero-sum-ledger-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket zero-sum flow ledger",
   "version": "858973c2494c",
   "version_date": "2026-08-13"
@@ -576,14 +576,14 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 ```json
 {
   "dataset": "prediction-market-zero-sum-ledger",
-  "how_to_cite": "Ailin Sun. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/zero_sum_ledger/zero_sum_ledger.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "zero-sum-ledger-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket zero-sum flow ledger",
   "version": "858973c2494c",
   "version_date": "2026-08-13"
@@ -594,4 +594,4 @@ These are contract/requester adapters, not trader wallets. They appear in settle
 
 ## Public attribution update
 
-Release v0.1.2 standardizes attribution as Ailin Sun, an independent researcher, and points citation links to MarketFlow. Research numbers, dates, windows and snapshot filenames are unchanged. Schema namespace strings are synchronized across the data and instruments; schema constraints and annotations are unchanged.
+Release v0.1.2 standardized the citation blocks embedded in each snapshot and pointed citation links at MarketFlow. From v0.2.0 those blocks attribute the project rather than a person; every value, window, version identifier and immutable URL is unchanged, so a citation written against either release resolves to the same bytes. The v0.1.2 wording remains in that release and in its archived record. Research numbers, dates, windows and snapshot filenames are unchanged. Schema namespace strings are synchronized across the data and instruments; schema constraints and annotations are unchanged.

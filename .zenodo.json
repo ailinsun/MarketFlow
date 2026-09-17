@@ -1,21 +1,25 @@
 {
-  "title": "MarketFlow: experimental prediction-market research",
+  "title": "MarketFlow: prediction-market microstructure measurements and an execution and risk-control system",
   "upload_type": "software",
-  "description": "Experimental studies by independent researcher Ailin Sun on prediction-market order flow, event-contract fees, repeated trading patterns and UMA settlement. Includes research instruments, frozen aggregate snapshots and historical working reports, with offline checks of the included methods and aggregate identities. Raw trading tapes and wallet identities are not distributed. Contract-pair annotations retain initial review status. Code is Apache-2.0; the original data compilation, reports and research documentation are CC BY 4.0, subject to upstream rights.",
+  "description": "Measurements of prediction-market order flow and the execution and risk-control system built on them. The research half contributes a zero-sum flow ledger over 439 settled markets, event-contract fee geometry, repeated-size trading signatures and a UMA settlement register, with frozen aggregate snapshots, schemas and offline verification of the included methods and aggregate identities. The system half contributes event-level exposure and correlation accounting that enumerates mutually exclusive settlement states exactly, capital-relative risk budgets and position sizing, market-quality and settlement gates, an enclave-scoped non-custodial signing layer with a unitized share ledger, and fail-loud monitoring. The core requires no third-party packages; a single command runs every gate and self-test offline. Raw trading tapes and wallet identities are not distributed. Contract-pair annotations retain initial review status. Code is Apache-2.0; the original data compilation, reports and research documentation are CC BY 4.0, subject to upstream rights.",
   "creators": [
     {
-      "name": "Sun, Ailin"
+      "name": "MarketFlow contributors"
     }
   ],
   "license": "Apache-2.0",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "keywords": [
     "prediction markets",
+    "event contracts",
     "market microstructure",
     "event-contract fees",
     "Polymarket",
     "UMA",
-    "settlement"
+    "settlement",
+    "risk management",
+    "position sizing",
+    "execution"
   ],
   "access_right": "open"
 }

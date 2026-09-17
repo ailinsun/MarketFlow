@@ -81,14 +81,14 @@
  "changelog": [],
  "citation": {
   "dataset": "prediction-market-zero-sum-ledger",
-  "how_to_cite": "Ailin Sun. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket zero-sum flow ledger.\" Version 858973c2494c (2026-08-13), window 2025-12-11 to 2026-08-13. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/zero_sum_ledger/2026-08-13-858973c2494c.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/zero_sum_ledger/zero_sum_ledger.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "zero-sum-ledger-v0.1",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket zero-sum flow ledger",
   "version": "858973c2494c",
   "version_date": "2026-08-13"

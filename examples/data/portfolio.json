@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "SYNTHETIC portfolio. Every condition id, slug and title here is invented for",
+    "this demonstration; none of it is an observed position and none of it belongs",
+    "to any account. The shape is real: it is the row format the multi-tenant layer",
+    "and the public data API both produce, so the same file format works against",
+    "live data without changing a line of code.",
+    "",
+    "Three groups, chosen to exercise three different paths through the exposure",
+    "engine:",
+    "  synthetic-league-winner  a mutually exclusive group. Four NO legs on a",
+    "                           five-way race: at most one of them can lose, so the",
+    "                           true exposure is far below the sum of the costs.",
+    "  synthetic-policy-rate    two legs on one event that are NOT mutually",
+    "                           exclusive. No structural identity applies, so the",
+    "                           conservative assumption is that they lose together.",
+    "  standalone               one independent leg: exposure is simply its cost."
+  ],
+  "positions": [
+    {"condition_id": "0x1001", "event_slug": "synthetic-league-winner", "negative_risk": true,
+     "title": "Synthetic League Winner - Team Alpha", "market_slug": "synthetic-league-winner-alpha",
+     "outcome": "No", "shares": 2500.0, "entry_price": 0.88, "end_date": "2027-03-01"},
+    {"condition_id": "0x1002", "event_slug": "synthetic-league-winner", "negative_risk": true,
+     "title": "Synthetic League Winner - Team Bravo", "market_slug": "synthetic-league-winner-bravo",
+     "outcome": "No", "shares": 2500.0, "entry_price": 0.90, "end_date": "2027-03-01"},
+    {"condition_id": "0x1003", "event_slug": "synthetic-league-winner", "negative_risk": true,
+     "title": "Synthetic League Winner - Team Charlie", "market_slug": "synthetic-league-winner-charlie",
+     "outcome": "No", "shares": 2500.0, "entry_price": 0.92, "end_date": "2027-03-01"},
+    {"condition_id": "0x1004", "event_slug": "synthetic-league-winner", "negative_risk": true,
+     "title": "Synthetic League Winner - Team Delta", "market_slug": "synthetic-league-winner-delta",
+     "outcome": "No", "shares": 2500.0, "entry_price": 0.94, "end_date": "2027-03-01"},
+
+    {"condition_id": "0x2001", "event_slug": "synthetic-policy-rate", "negative_risk": false,
+     "title": "Synthetic Policy Rate - cut by March", "market_slug": "synthetic-policy-rate-cut-march",
+     "outcome": "Yes", "shares": 4000.0, "entry_price": 0.41, "end_date": "2027-03-20"},
+    {"condition_id": "0x2002", "event_slug": "synthetic-policy-rate", "negative_risk": false,
+     "title": "Synthetic Policy Rate - cut by June", "market_slug": "synthetic-policy-rate-cut-june",
+     "outcome": "Yes", "shares": 3000.0, "entry_price": 0.63, "end_date": "2027-06-19"},
+
+    {"condition_id": "0x3001", "event_slug": "synthetic-standalone", "negative_risk": false,
+     "title": "Synthetic Standalone Market", "market_slug": "synthetic-standalone",
+     "outcome": "Yes", "shares": 1800.0, "entry_price": 0.55, "end_date": "2027-01-15"}
+  ]
+}

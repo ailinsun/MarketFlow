@@ -2,14 +2,14 @@
  "changelog": [],
  "citation": {
   "dataset": "adjusted-ranking-snapshot",
-  "how_to_cite": "Ailin Sun. \"Polymarket wallet ranking, farm-filtered.\" Version 04fd708f9336 (2026-09-01), window 2026-07-06 to 2026-09-01. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
+  "how_to_cite": "MarketFlow contributors. \"Polymarket wallet ranking, farm-filtered.\" Version 04fd708f9336 (2026-09-01), window 2026-07-06 to 2026-09-01. Retrieved from https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "immutable_url": "https://github.com/ailinsun/MarketFlow/blob/v0.1.2/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "latest_url": "https://github.com/ailinsun/MarketFlow/blob/main/data/farm_signature/clean_data_2026-09-01_aggregates.json",
   "license": "CC BY 4.0",
   "license_url": "https://creativecommons.org/licenses/by/4.0/",
   "method_version": "clean-data-v0.2",
   "note": "cite the immutable_url — latest_url is a rolling pointer and its numbers change when the window advances",
-  "publisher": "Ailin Sun",
+  "publisher": "MarketFlow contributors",
   "title": "Polymarket wallet ranking, farm-filtered",
   "version": "04fd708f9336",
   "version_date": "2026-09-01"

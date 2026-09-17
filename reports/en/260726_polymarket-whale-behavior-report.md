@@ -592,7 +592,7 @@ is live and grows, so row counts differ slightly between artifacts):
 
 ---
 
-*Compiled by [Ailin Sun](https://www.linkedin.com/in/ailinsun/). Corrections welcome — if you can show one of these numbers
+*Compiled for [MarketFlow](https://github.com/ailinsun/MarketFlow). Corrections welcome — if you can show one of these numbers
 is wrong, we want to know.*
 
 

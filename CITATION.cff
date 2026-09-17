@@ -1,16 +1,35 @@
 cff-version: 1.2.0
 message: "Please cite this repository and the dated dataset snapshot used."
-title: "MarketFlow: experimental prediction-market research"
+title: "MarketFlow: prediction-market microstructure measurements and an execution and risk-control system"
+abstract: >-
+  Measurements of prediction-market order flow — a zero-sum flow ledger over 439
+  settled markets, event-contract fee geometry, repeated-size trading signatures and
+  UMA settlement outcomes — together with the execution and risk-control system built
+  on their conclusion that friction, not prediction, is the binding constraint in
+  these markets. The system covers event-level exposure and correlation accounting,
+  capital-relative risk budgets and position sizing, market-quality and settlement
+  gates, an enclave-scoped non-custodial signing layer, and fail-loud monitoring.
+  Raw trading tapes and wallet identities are not distributed.
+type: software
 authors:
-  - family-names: Sun
-    given-names: Ailin
-version: 0.1.2
-doi: "10.5281/zenodo.22734802"
-date-released: 2026-09-13
+  # CFF 1.2.0 definitions.entity: an organisation or project, identified by `name`
+  # alone. Provenance for the earlier release is carried by the DOI in
+  # `identifiers` rather than by a personal name.
+  - name: "MarketFlow contributors"
+version: 0.2.0
+date-released: 2026-09-17
 license: Apache-2.0
 repository-code: "https://github.com/ailinsun/MarketFlow"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22734802"
+    description: "Archived research-only release v0.1.2"
 keywords:
   - prediction markets
+  - event contracts
   - market microstructure
   - event-contract fees
   - settlement
+  - risk management
+  - position sizing
+  - execution

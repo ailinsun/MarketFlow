@@ -8,4 +8,4 @@ Relation labels distinguish exact equivalence, directional implication, overlap,
 
 The vendor-trial collection and comparison scripts are omitted because their private imports and external trial inputs are not distributed. `python3 instruments/verify_snapshots.py` checks the retained pair structure from the repository root.
 
-Licence: CC BY 4.0 for the original annotations. No embedded citation block exists; cite Ailin Sun, this repository release and the filename. [Inventory and citation policy](../README.md).
+Licence: CC BY 4.0 for the original annotations. No embedded citation block exists; cite the authors named in CITATION.cff, this repository release and the filename. [Inventory and citation policy](../README.md).
