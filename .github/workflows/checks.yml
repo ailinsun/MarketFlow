@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # On a pull_request event the default ref is a merge commit GitHub
+          # synthesises for the run. It is not repository history, it never lands on
+          # any branch, and its author metadata is copied from the account profile
+          # rather than from anything in the repository — so the publication gate was
+          # scanning a commit the repository cannot author or control. Check out the
+          # branch head, which is exactly the set of commits this release adds.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -54,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       # An independent second layer. The publication gate matches patterns it was
