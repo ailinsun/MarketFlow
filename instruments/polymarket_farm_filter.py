@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Detect repeated-size, near-certain BUY signatures and compare ranking aggregates.
 
-刷量农场过滤器：同一市场、相同数量的近确定价 BUY 跨多个钱包重复出现时标注模式。
+Wash-volume filter. It flags a pattern: near-certain BUYs of an identical size,
+repeated across several wallets inside one market.
 The detector identifies a repeated pattern, not identity, common control or
 intent. Thresholds and arithmetic retain the original research implementation.
 Inputs are local feed JSONL or gzip tape; the CLI prints aggregates only.
@@ -19,13 +20,17 @@ from dataclasses import dataclass
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WHALE_FEED = os.path.join(REPO, "data/inputs/whale_trades.jsonl")
-# ⚠ 2026-08-05: 这份 tape (194 万笔逐笔, 鲸鱼密集 top-500 市场) 已在 referenced section 的 13.75 GB 清理里
-# **删除且无归档**, 本文件的 tape 相关路径因此跑不出结果。不像 meta 可以从 Gamma 重建 ——
-# 逐笔要重新采集才有。**照实标注不假装可用**: 要用先重采 tape, 否则下游读到的是空。
+# The original tape (1.94 million fills across the 500 highest-activity markets) was
+# deleted during a storage cleanup and was not archived, so every tape path in this
+# file reads empty. Market metadata can be rebuilt from the public API; a per-fill
+# tape cannot, it has to be collected again. This is stated rather than papered over:
+# collect a tape first, or downstream reads nothing.
 TAPE_PATH = os.path.join(REPO, "data/inputs/tape.jsonl.gz")
 OUT_DIR = os.path.join(REPO, "data/generated/farm_signature")
-# live 消费路径 (profiler 名单口径读它) = feed 源; tape 源是快照研究口径, 另落文件名 —
-# 两个源共写一份会互相覆盖, 而它们的样本框根本不同 (feed 只有 ≥$2,000 的打印)。
+# The live consumer path reads the feed source; the tape source is a research
+# snapshot and writes under its own filename. One shared output would let them
+# overwrite each other, and their sampling frames are not the same thing: the feed
+# only ever contains prints of $2,000 or more.
 FARM_PATH = os.path.join(OUT_DIR, "farm_wallets.json")
 CANDIDATES_PATH = os.path.join(OUT_DIR, "candidates.json")
 MARKET_HEAT_PATH = os.path.join(OUT_DIR, "market_heat.json")
@@ -35,28 +40,30 @@ MARKET_HEAT_PATH = os.path.join(OUT_DIR, "market_heat.json")
 
 @dataclass
 class Config:
-    # -- 农场判据 (锚 260803 实测, 非拟合任何 PnL)
-    near_certain_px: float = 0.99     # 近确定价档: 费率 rate·(1−p) ≤ 0.05% 的零成本区
-    sig_min_wallets: int = 5          # 同一 (市场, 精确 size) 的不同钱包数下界
-    sig_min_prints: int = 20          # 同一 (市场, 精确 size) 的重复笔数下界
-    farm_sig_share: float = 0.80      # 买入额落在签名上的占比 ≥ 此值 = 农场钱包
-    # -- B1 名单口径 (笔数 × 市场广度, 取代按成交额)
-    min_life_days: float = 7.0        # 硬门槛: 存活 < 7 天的"鲸鱼"没有可跟的行为历史
-    min_markets: int = 3              # 硬门槛: 只碰 1-2 个市场 = 单事件投机或刷量
-    # -- 零成本快筛 (不跑签名聚类也能砍掉绝大部分污染)
-    quick_usd_lo: float = 10000.0     # 该美元档 72.3% 是农场
+    # -- pattern criteria, anchored to measurement rather than fitted to any P&L
+    near_certain_px: float = 0.99     # the band where rate * (1 - p) <= 0.05%: near-free
+    sig_min_wallets: int = 5          # distinct wallets on one (market, exact size)
+    sig_min_prints: int = 20          # repeated prints on one (market, exact size)
+    farm_sig_share: float = 0.80      # share of a wallet's buying that sits on signatures
+    # -- ranking convention: trade count times market breadth, not dollar volume
+    min_life_days: float = 7.0        # under a week there is no behaviour to read
+    min_markets: int = 3              # one or two markets is a single bet, not a record
+    # -- cheap screen: removes most contamination without the signature clustering
+    quick_usd_lo: float = 10000.0     # 72.3% of this dollar band matched the pattern
     quick_usd_hi: float = 20000.0
     quick_max_markets: int = 2
     quick_max_life_days: float = 1.0
 
 
 # --------------------------------------------------------------------------- #
-# 取数适配 — 两种已落盘的逐笔源归一到同一条记录
-#   feed = whale_trades.jsonl (单笔 ≥$2,000 的大额打印, live 滚动)
-#   tape = whale_report_260726/tape.jsonl.gz (鲸鱼密集 top-500 市场的全量逐笔, 快照)
-# 归一记录: (wallet, cid, side, px, size, ts_s, label)
-# label = Polymarket 公开用户名, 空串 = unnamed。它同时当两用: 名单要带回标签给消费层,
-# 而 unnamed 率本身是「这批地址是不是真人」的可核验代理 (全样本 82% 有名字, 农场 0%)。
+# Input adapters: two on-disk per-fill sources normalised to one record.
+#   feed  a rolling live tape of prints of $2,000 or more
+#   tape  a frozen snapshot of every fill in the 500 highest-activity markets
+# Normalised record: (wallet, cid, side, px, size, ts_s, label)
+# label is the venue's public username, empty when unset. It serves twice over: the
+# ranking hands the label back to consumers, and the share of unnamed addresses is
+# itself a checkable proxy for whether a cohort is made of people. Across the whole
+# sample 82% carry a name; among pattern-matching addresses none do.
 # --------------------------------------------------------------------------- #
 def iter_feed(path: str):
     with open(path) as f:
@@ -90,13 +97,16 @@ def iter_tape(path: str):
 
 
 # --------------------------------------------------------------------------- #
-# 聚合 — 一趟流式, 同时攒 钱包 / 签名候选 / 市场
+# Aggregation: one streaming pass building wallets, signature candidates and markets
 # --------------------------------------------------------------------------- #
 def is_real_name(label: str | None) -> bool:
-    """公开用户名是否是**人取的**。Polymarket 给没设名字的地址派生 `0x…` 形式的默认名,
-    实测占全部非空 name/pseudo 的 **23.6%** —— 把它算成「有用户名」会让 unnamed 率整体
-    偏低 23 个百分点, 而 unnamed 率正是判「这批地址是不是真人」的验收指标。
-    口径与 `whale_report_dataset.scan_contact_fields` 一致 (那里已按此排除)。"""
+    """Whether a public username was chosen by a person.
+
+    The venue derives a default `0x...` name for addresses that never set one, and
+    those account for 23.6% of all non-empty names. Counting them as named would
+    understate the unnamed share by 23 percentage points, and the unnamed share is
+    exactly the measure being used to judge whether a cohort is human.
+    """
     return bool(label) and not str(label).lower().startswith("0x")
 
 
@@ -107,12 +117,14 @@ def new_wallet() -> dict:
 
 
 def scan(records, cfg: Config) -> dict:
-    """一趟聚合。签名归属需要全局计数 ⟹ 近确定档的 (钱包, 键, 金额) 先留痕, 第二趟归因。"""
+    """One aggregation pass. Attributing a signature needs global counts, so the
+    near-certain band records (wallet, key, dollars) here and attributes on a second
+    pass."""
     wallets: dict[str, dict] = defaultdict(new_wallet)
     sigs: dict[tuple, dict] = defaultdict(lambda: {"wallets": set(), "prints": 0, "usd": 0.0})
     markets: dict[str, dict] = defaultdict(lambda: {"buy_usd": 0.0, "n_buys": 0, "traders": set(),
                                                     "buy_usd_near_certain": 0.0})
-    near: list[tuple] = []   # (wallet, sig_key, usd) — 近确定档买入的留痕
+    near: list[tuple] = []   # (wallet, sig_key, usd) for the near-certain band
     n_rows = 0
     for w, cid, side, px, sz, ts, label in records:
         n_rows += 1
@@ -156,7 +168,7 @@ def scan(records, cfg: Config) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# 判定
+# Classification
 # --------------------------------------------------------------------------- #
 def is_farm(a: dict, cfg: Config) -> bool:
     return a["buy_usd"] > 0 and (a["sig_usd"] / a["buy_usd"]) >= cfg.farm_sig_share
@@ -190,26 +202,38 @@ def wallet_rows(agg: dict, cfg: Config) -> list[dict]:
 
 
 def quick_suspect(row: dict, cfg: Config) -> bool:
-    """零成本快筛 — **给拿不到逐笔流水、跑不了签名聚类的消费方用的**独立入口。
+    """A cheap screen for consumers that have no per-fill tape and cannot run the
+    signature clustering.
 
-    该美元档 (**$10k–20k**) 实测 72.3% 是农场, 而相邻的 $5k–10k 档只有 0.6%、$1k–5k 档 0.0%。
-    污染窄到这个程度, 是因为流水线按固定预算铺钱包: 每个钱包刷到十几 k 就换下一个。
-    只要有 (买入额, 市场数, 寿命) 三个标量就能用, 一行判完。
+    72.3% of addresses in the $10k-20k band matched the pattern, against 0.6% in the
+    neighbouring $5k-10k band and 0.0% in $1k-5k. These figures were measured on the
+    per-fill tape described at the top of this file, which was not retained and is not
+    distributed, so they cannot be recomputed from this repository; the published rank
+    audit under data/farm_signature can. Contamination is that narrow because
+    the operation spends a fixed budget per wallet and then moves to the next one.
+    Three scalars are enough to apply it: buy notional, market count and lifetime.
 
-    注意 `rank_candidates` **不调用它** —— 那里的硬门槛 `n_markets ≥ 3` 已经把本函数命中的
-    (`n_markets ≤ 2`) 全部包住了, 再调一次是死代码。两条判据的关系由 selftest 钉住。"""
+    `rank_candidates` deliberately does not call this. Its hard floor of three markets
+    already contains everything this screen catches, so calling it there would be dead
+    code. A self-test pins the containment so it cannot silently stop being true.
+    """
     return (cfg.quick_usd_lo <= row["buy_usd"] < cfg.quick_usd_hi
             and row["n_markets"] <= cfg.quick_max_markets
             and row["life_days"] < cfg.quick_max_life_days)
 
 
 def rank_candidates(rows: list[dict], cfg: Config, *, drop_farms: bool = True) -> list[dict]:
-    """B1 口径: 排序键 `n_trades × n_markets`, 硬门槛 life_days≥7 且 n_markets≥3。
+    """Rank by trade count times market breadth, with hard floors of seven days of
+    life and three markets.
 
-    为什么不是 buy_usd: 按 `buy_usd` 取前 5000 有 51.9% 是农场, 按 `n_trades` 取前 5000
-    只有 0.1%, 两者仅重叠 19.6% —— 同一个池子, 两种排序键的污染率差 500 倍。
-    金额可以用一笔必胜票凭空造出来, 笔数 × 广度 × 存活天数造不出来 (每一维都要真实的
-    重复行为), 所以后者才是「这个地址值不值得看」的可信代理。"""
+    Why not dollar volume: on the published rank audit the top 5,000 by buy notional is
+    46.2% pattern-matching addresses while the top 5,000 by count times breadth is
+    0.0%, against a 5.9% baseline over all 144,532 wallets with buys. Same wallets,
+    same window, two ranking keys, and almost half a leaderboard either way. A dollar figure can be manufactured with one near-certain ticket.
+    Count times breadth times survival cannot: every dimension requires real repeated
+    behaviour over time, which is why it is the more trustworthy proxy for an address
+    being worth reading.
+    """
     keep = []
     for r in rows:
         if drop_farms and r["is_farm"]:
@@ -217,19 +241,25 @@ def rank_candidates(rows: list[dict], cfg: Config, *, drop_farms: bool = True) -
         if r["life_days"] < cfg.min_life_days or r["n_markets"] < cfg.min_markets:
             continue
         keep.append(r)
-    # 同分再按笔数、再按市场数 — 让「活跃度」在乘积打平时占先, 结果可复现不靠字典序
+    # Ties break on trade count, then market count, so a tied product resolves on
+    # activity and the output is reproducible rather than alphabetical.
     keep.sort(key=lambda r: (-r["activity_score"], -r["n_trades"], -r["n_markets"], r["wallet"]))
     return keep
 
 
 def market_heat(agg: dict, farms: set) -> list[dict]:
-    """B2: 市场级热度的 ex-farm 口径。
+    """Market-level activity, counted excluding pattern-matching addresses.
 
-    冷门盘的 `n_traders` / `volume` 被农场虚高 64–92% (实测最脏的一个市场 893 个 traders
-    里 820 个是农场 → 真实 71 个人)。**做「热门市场发现」前必须按 ex-farm trader 数重排**,
-    否则会把 71 个真人的盘当成 893 人的热门盘去追。
-    `buy_usd_near_certain` 一并给出: p≥0.99 区是零费区, 任何基于成交额的**品类**信号
-    必须先按价格带过滤 (politics 94% 的钱在这个区)。"""
+    Trader counts and volume on thin markets are inflated by 64% to 92%. In the worst
+    market measured, 820 of 893 traders matched the pattern, leaving 71 actual people.
+    (Measured on the undistributed tape; see the note on the quick screen above.)
+    Any ranking of "busy markets" has to be rebuilt on the excluding count first, or a
+    market with 71 people in it gets chased as one with 893.
+
+    `buy_usd_near_certain` is reported alongside because the band above 0.99 is
+    effectively fee-free, so any category signal built on dollar volume has to filter
+    by price band first. In one category 94% of the money sat in that band.
+    """
     out = []
     for cid, m in agg["markets"].items():
         traders = m["traders"]
@@ -243,8 +273,10 @@ def market_heat(agg: dict, farms: set) -> list[dict]:
             "buy_usd_near_certain": round(m["buy_usd_near_certain"], 2),
             "near_certain_share": round(m["buy_usd_near_certain"] / m["buy_usd"], 4) if m["buy_usd"] else 0.0,
             "n_buys": m["n_buys"],
-            # 农场钱包的买入额是**全样本**口径 (该钱包在别的市场也刷), 只作污染量级参考,
-            # 不当"本市场农场成交额"用 —— 精确到市场需按笔归因, 见 buy_usd_near_certain
+            # A matching wallet's buy notional is a whole-sample figure: it also
+            # trades elsewhere. It indicates the scale of contamination and is not a
+            # per-market total; that needs per-fill attribution, as done for
+            # buy_usd_near_certain.
             "farm_wallet_buy_usd_allmarkets": round(farm_usd, 2),
         })
     out.sort(key=lambda r: -r["n_traders_exfarm"])
@@ -252,12 +284,13 @@ def market_heat(agg: dict, farms: set) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# 落盘 — 消费方 (profiler 名单口径 / 市场发现) 读这三份
+# Outputs: the three files consumers read
 # --------------------------------------------------------------------------- #
 
 
 def load_market_heat(path: str = MARKET_HEAT_PATH) -> dict[str, dict]:
-    """消费侧入口 — {condition_id: 热度行}。文件缺失/损坏返回空 dict = 不调整 (fail-soft)。"""
+    """Consumer entry point mapping condition id to an activity row. A missing or
+    corrupt file returns an empty dict, meaning no adjustment rather than a crash."""
     if not os.path.exists(path):
         return {}
     try:
@@ -268,12 +301,16 @@ def load_market_heat(path: str = MARKET_HEAT_PATH) -> dict[str, dict]:
 
 
 def exfarm_volume_factor(heat_row: dict | None) -> float:
-    """成交额的去污染折减系数 ∈ [0,1] — 「这个市场的成交额里有多少不是刷出来的」。
+    """A discount factor in [0, 1]: how much of a market's volume is not wash.
 
-    用 `1 − near_certain_share` (p≥0.99 区的买入额占比) 而不是农场钱包数占比:
-    热度问的是**成交额**虚不虚, 而虚的那部分正是零费区那些必胜票。
-    没有该市场的观测 ⟹ 返 1.0 (不调整) —— **没数据不等于没农场**, 只是不知道,
-    这时把它当 0 会把所有没观测过的市场一刀打死, 比不调整错得更狠。"""
+    It uses one minus the near-certain share of buying, not the share of matching
+    wallets, because the question is whether the dollar volume is real, and the
+    unreal part is precisely the near-certain tickets bought in the fee-free band.
+
+    An unobserved market returns 1.0, meaning no adjustment. No data does not mean no
+    wash volume, it means not knowing; treating it as zero would condemn every market
+    never observed, which is a larger error than leaving it alone.
+    """
     if not heat_row:
         return 1.0
     s = heat_row.get("near_certain_share")
@@ -283,8 +320,9 @@ def exfarm_volume_factor(heat_row: dict | None) -> float:
 
 
 def load_farm_wallets(path: str = FARM_PATH) -> set:
-    """消费侧入口 — 文件缺失返回空集 (过滤器不可用时**不静默放行也不硬崩**:
-    调用方拿到空集就等于没过滤, 但 candidates.json 的 meta 里会写明 source)。"""
+    """Consumer entry point. A missing file returns an empty set: when the filter is
+    unavailable it neither waves everything through silently nor crashes. The caller
+    gets no filtering, and the output metadata records which source was used."""
     if not os.path.exists(path):
         return set()
     try:
@@ -294,10 +332,13 @@ def load_farm_wallets(path: str = FARM_PATH) -> set:
 
 
 def compare_lists(rows: list[dict], cfg: Config, top_n: int = 500) -> dict:
-    """验收对照: 旧口径 (按 buy_usd 降序, 无闸) vs 新口径 (笔数×广度 + 寿命/广度闸 + 剔农场)。
+    """Side-by-side comparison of the two ranking conventions: dollar volume with no
+    floors, against count times breadth with the lifetime, breadth and pattern floors.
 
-    报重叠率与两份名单的 unnamed 率 / 中位 life_days / 中位 n_markets —— 这三个量是
-    「名单里是不是真人」的可核验代理, 不依赖任何我们自己的判型器。"""
+    It reports the overlap plus, for each list, the unnamed share, the median lifetime
+    and the median market count. Those three are checkable proxies for whether a list
+    is made of people, and none of them depends on this module's own classifier.
+    """
     def med(vals):
         v = sorted(vals)
         return v[len(v) // 2] if v else None
@@ -330,7 +371,8 @@ def compare_lists(rows: list[dict], cfg: Config, top_n: int = 500) -> dict:
             "overlap_n": len(both),
             "overlap_share": round(len(both) / max(len(ow), 1), 4),
             "baseline_all_wallets": portrait(rows),
-            # 两份名单本体都落盘 — 验收要的是「各出一份」可逐条核对, 不是只看汇总量
+            # Both lists are written out. The point of the comparison is two lists a
+            # reader can check line by line, not a pair of summary numbers.
             "old_list": slim(old), "new_list": slim(new),
             "only_in_old": sorted(ow - nw), "only_in_new": sorted(nw - ow)}
 
@@ -358,88 +400,95 @@ def selftest() -> int:
     cfg = Config(sig_min_wallets=3, sig_min_prints=6)
     day = 86400
 
-    # 1) 流水线指纹: 3 个 spoke 钱包在同一市场把 size=5200 重复打 6 笔 @0.998 → 全判农场
+    # 1) The operation's fingerprint: three wallets repeating size 5200 six times at
+    #    0.998 in one market.
     recs = []
     for i in range(3):
         for j in range(3):
             recs.append((f"0xspoke{i}", "cFARM", "BUY", 0.998, 5200.0, 1_780_000_000 + j * 60, ""))
-    # 真人对照: 同一市场买了但价位与成交量都不重复
+    # Control: a wallet in the same market with no repeated price or size.
     recs += [("0xhuman", "cFARM", "BUY", 0.42, 100.0, 1_780_000_000, "synthetic-person"),
              ("0xhuman", "cB", "BUY", 0.55, 250.0, 1_780_000_000 + 10 * day, "synthetic-person"),
              ("0xhuman", "cC", "BUY", 0.31, 80.0, 1_780_000_000 + 20 * day, "synthetic-person")]
     agg = scan(iter(recs), cfg)
     farms = farm_wallets(agg, cfg)
-    check("签名: (市场,精确size) 跨 3 钱包 6 笔成立", len(agg["sig_keys"]) == 1)
-    check("农场: 3 个 spoke 全中", farms == {"0xspoke0", "0xspoke1", "0xspoke2"})
-    check("真人不被误伤 (同市场但无指纹)", "0xhuman" not in farms)
+    check("a signature forms across three wallets and six prints", len(agg["sig_keys"]) == 1)
+    check("all three repeating wallets match", farms == {"0xspoke0", "0xspoke1", "0xspoke2"})
+    check("a wallet with no fingerprint is untouched", "0xhuman" not in farms)
 
-    # 2) 近确定价但**不重复成交量** → 不判农场 (买贵票本身不是罪, 是流水线才是)
+    # 2) Near-certain prices with no repeated size do not match. Buying a near-certain
+    #    ticket is not the pattern; industrial repetition of one is.
     recs2 = [(f"0xw{i}", "cX", "BUY", 0.995, 100.0 + i, 1_780_000_000, "") for i in range(9)]
     agg2 = scan(iter(recs2), cfg)
-    check("近确定价但成交量各不相同 → 零签名", len(agg2["sig_keys"]) == 0 and not farm_wallets(agg2, cfg))
+    check("near-certain prices with varied sizes form no signature",
+          len(agg2["sig_keys"]) == 0 and not farm_wallets(agg2, cfg))
 
-    # 3) 单钱包自刷够不到签名闸 (钱包数 < gate) —— 要求跨钱包复现, 防单点误判
+    # 3) One wallet repeating alone never reaches the gate: the pattern must reproduce
+    #    across wallets, which is what stops a single address being condemned.
     recs3 = [("0xsolo", "cY", "BUY", 0.999, 3000.0, 1_780_000_000 + i, "") for i in range(30)]
     agg3 = scan(iter(recs3), cfg)
-    check("单钱包重复不成签名 (需跨钱包复现)", len(agg3["sig_keys"]) == 0)
+    check("one wallet repeating alone forms no signature", len(agg3["sig_keys"]) == 0)
 
-    # 4) B1 排序键与门槛
+    # 4) the ranking key and its floors
     rows = [
         {"wallet": "0xbroad", "n_trades": 40, "n_markets": 10, "buy_usd": 12000.0,
          "life_days": 20.0, "is_farm": False, "activity_score": 400},
         {"wallet": "0xrich", "n_trades": 3, "n_markets": 3, "buy_usd": 900000.0,
          "life_days": 30.0, "is_farm": False, "activity_score": 9},
         {"wallet": "0xshort", "n_trades": 99, "n_markets": 30, "buy_usd": 50000.0,
-         "life_days": 2.0, "is_farm": False, "activity_score": 2970},     # 寿命闸砍
+         "life_days": 2.0, "is_farm": False, "activity_score": 2970},     # lifetime floor
         {"wallet": "0xnarrow", "n_trades": 99, "n_markets": 2, "buy_usd": 50000.0,
-         "life_days": 30.0, "is_farm": False, "activity_score": 198},     # 广度闸砍
+         "life_days": 30.0, "is_farm": False, "activity_score": 198},     # breadth floor
         {"wallet": "0xfarm", "n_trades": 500, "n_markets": 40, "buy_usd": 15000.0,
-         "life_days": 30.0, "is_farm": True, "activity_score": 20000},    # 农场闸砍
+         "life_days": 30.0, "is_farm": True, "activity_score": 20000},    # pattern floor
     ]
     ranked = rank_candidates(rows, Config())
-    check("B1: 按 n_trades×n_markets 排序, 巨额小笔数排在广度型之后",
+    check("ranking puts breadth ahead of a large but narrow dollar figure",
           [r["wallet"] for r in ranked] == ["0xbroad", "0xrich"])
-    check("B1: life_days<7 / n_markets<3 / 农场 三闸各自生效",
+    check("each of the three floors rejects on its own",
           all(w not in [r["wallet"] for r in ranked] for w in ("0xshort", "0xnarrow", "0xfarm")))
 
-    # 5) 零成本快筛: $10k–20k 且 ≤2 市场 且 <1 天
+    # 5) the cheap screen: the $10k-20k band, at most two markets, under a day
     qc = Config()
-    check("快筛: 命中该美元档的窄寿命窄广度地址",
+    check("the screen catches a narrow address in that band",
           quick_suspect({"buy_usd": 15000.0, "n_markets": 1, "life_days": 0.2}, qc))
-    check("快筛: 相邻美元档 (0.6% 污染) 不误伤",
+    check("the neighbouring band is untouched",
           not quick_suspect({"buy_usd": 8000.0, "n_markets": 1, "life_days": 0.2}, qc))
-    check("快筛: 同档但广度够 / 寿命够 的不误伤",
+    check("enough breadth or enough life exempts an address in the band",
           not quick_suspect({"buy_usd": 15000.0, "n_markets": 5, "life_days": 0.2}, qc)
           and not quick_suspect({"buy_usd": 15000.0, "n_markets": 1, "life_days": 9.0}, qc))
-    # 两条判据的包含关系 (快筛命中 ⟹ 硬门槛必砍) —— 这是 rank_candidates 不再调用它的依据
+    # Containment: anything the screen catches the hard floors already reject. This is
+    # why rank_candidates does not call it, and the check stops that going stale.
     hit = [{"wallet": "0xq", "buy_usd": 15000.0, "n_markets": 2, "life_days": 0.5,
             "is_farm": False, "n_trades": 99, "activity_score": 198}]
-    check("快筛命中的地址被硬门槛完全包住 (所以 rank_candidates 不重复调, 非漏判)",
+    check("the hard floors contain everything the screen catches",
           quick_suspect(hit[0], qc) and rank_candidates(hit, qc) == [])
 
-    # 6) 市场热度 ex-farm: 3 农场 + 1 真人 → 表面 4 人, 真实 1 人
+    # 6) market activity excluding matches: three matching plus one other reads as
+    #    four traders on the surface and one underneath
     heat = market_heat(agg, farms)
     hf = {h["condition_id"]: h for h in heat}
-    check("B2: ex-farm trader 数剔掉农场",
+    check("the excluding trader count removes matches",
           hf["cFARM"]["n_traders"] == 4 and hf["cFARM"]["n_traders_exfarm"] == 1)
-    check("B2: 零费区 (p≥0.99) 成交额单列, 供品类信号按价格带过滤",
+    check("fee-free-band volume is reported separately",
           hf["cFARM"]["near_certain_share"] > 0.99 and hf["cB"]["near_certain_share"] == 0.0)
-    check("B2: 按 ex-farm trader 数降序 (热门发现的正确排序)",
+    check("markets sort by the excluding trader count",
           [h["condition_id"] for h in heat][0] == "cFARM"
           and all(heat[i]["n_traders_exfarm"] >= heat[i + 1]["n_traders_exfarm"]
                   for i in range(len(heat) - 1)))
 
-    # 6b) 名单带回公开用户名 (消费层要标签, unnamed 率是验收指标)
+    # 6b) the ranking hands back public usernames; the unnamed share is the measure
     wr = {r["wallet"]: r for r in wallet_rows(agg, cfg)}
-    check("label 回传 + unnamed 判定",
+    check("labels are returned and the unnamed flag is set",
           wr["0xhuman"]["label"] == "synthetic-person" and wr["0xhuman"]["named"]
           and wr["0xspoke0"]["label"] == "" and not wr["0xspoke0"]["named"])
-    check("0x 派生的默认名不算「有用户名」(占非空名的 23.6%)",
+    check("a derived 0x default name does not count as named",
           is_real_name("synthetic-person") and not is_real_name("0x461f5")
           and not is_real_name("0xsynthetic-derived-profile")
           and not is_real_name("") and not is_real_name(None))
 
-    # 7) 验收对照器: 旧口径把农场排在前面, 新口径清零
+    # 7) the comparison: the dollar-volume convention ranks matches first, the other
+    #    convention returns none
     cmp_rows = [{"wallet": f"0xf{i}", "buy_usd": 50000.0, "n_trades": 3, "n_markets": 1,
                  "life_days": 0.1, "is_farm": True, "named": False, "activity_score": 3}
                 for i in range(3)]
@@ -447,42 +496,46 @@ def selftest() -> int:
                   "life_days": 30.0, "is_farm": False, "named": True, "activity_score": 450}
                  for i in range(3)]
     c = compare_lists(cmp_rows, Config(), top_n=3)
-    check("对照: 旧口径 (按金额) 100% 农场 → 新口径 0%",
+    check("dollar ranking is all matches, the new ranking is none",
           c["old"]["farm_share"] == 1.0 and c["new"]["farm_share"] == 0.0)
-    check("对照: 两份零重叠时 overlap_share=0", c["overlap_share"] == 0.0)
-    check("对照: unnamed 率两侧都报出", c["old"]["unnamed_share"] == 1.0 and c["new"]["unnamed_share"] == 0.0)
-    check("对照: 两份名单本体都落盘可逐条核对",
+    check("disjoint lists report zero overlap", c["overlap_share"] == 0.0)
+    check("the unnamed share is reported for both lists",
+          c["old"]["unnamed_share"] == 1.0 and c["new"]["unnamed_share"] == 0.0)
+    check("both lists are written out for line-by-line checking",
           [r["wallet"] for r in c["old_list"]] == ["0xf0", "0xf1", "0xf2"]
           and [r["wallet"] for r in c["new_list"]] == ["0xr0", "0xr1", "0xr2"]
           and c["only_in_old"] == ["0xf0", "0xf1", "0xf2"])
 
-    # 8) 消费侧 fail-soft: 文件缺失 → 空集/空表 (不静默放行也不硬崩)
-    check("load_farm_wallets 缺文件返回空集", load_farm_wallets("/nonexistent/x.json") == set())
-    check("load_market_heat 缺文件返回空表", load_market_heat("/nonexistent/x.json") == {})
-    check("热度折减: 零费区占 92% 的盘, 成交额只认 8%",
+    # 8) consumer fail-soft: a missing file gives an empty set or table
+    check("a missing wallet file returns an empty set",
+          load_farm_wallets("/nonexistent/x.json") == set())
+    check("a missing activity file returns an empty table",
+          load_market_heat("/nonexistent/x.json") == {})
+    check("a market that is 92% fee-free band keeps 8% of its volume",
           abs(exfarm_volume_factor({"near_certain_share": 0.92}) - 0.08) < 1e-9)
-    check("热度折减: 干净盘不打折", exfarm_volume_factor({"near_certain_share": 0.0}) == 1.0)
-    check("热度折减: 没观测过的市场返 1.0 不调整 (没数据 ≠ 没农场, 但也不能一刀打死)",
+    check("a clean market is not discounted",
+          exfarm_volume_factor({"near_certain_share": 0.0}) == 1.0)
+    check("an unobserved market is not adjusted",
           exfarm_volume_factor(None) == 1.0 and exfarm_volume_factor({}) == 1.0
           and exfarm_volume_factor({"near_certain_share": None}) == 1.0)
 
-    # 9) life_days 与活跃度分数
+    # 9) lifetime and the activity score
     a = new_wallet()
     a["ts_min"], a["ts_max"] = 1_780_000_000, 1_780_000_000 + 7 * day
-    check("life_days 按首末成交时间跨度", abs(life_days(a) - 7.0) < 1e-9)
-    check("无时间戳的钱包 life=0 (不外推)", life_days(new_wallet()) == 0.0)
+    check("lifetime spans first to last fill", abs(life_days(a) - 7.0) < 1e-9)
+    check("a wallet with no timestamps has zero life", life_days(new_wallet()) == 0.0)
 
     print(f"\nselftest: {'ALL PASS' if not fails else f'{len(fails)} FAIL: {fails}'}")
     return 0 if not fails else 1
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Polymarket 刷量农场过滤器 (read-only)")
+    ap = argparse.ArgumentParser(description="Wash-volume pattern filter (read-only)")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--source", choices=["feed", "tape"], default="feed",
-                    help="feed=live 大额打印 (滚动) / tape=top-500 市场全量逐笔 (快照)")
+                    help="feed=rolling live large prints / tape=frozen snapshot of the busiest markets")
     ap.add_argument("--path", type=str, default=None)
-    ap.add_argument("--top", type=int, default=500, help="candidates.json 落多少个")
+    ap.add_argument("--top", type=int, default=500, help="how many candidates to write")
     args = ap.parse_args()
 
     if args.selftest:

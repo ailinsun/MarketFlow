@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marketflow"
+version = "0.2.0"
+description = "Execution and risk control for event-contract (prediction) markets"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MarketFlow contributors" }]
+keywords = [
+  "prediction-markets", "event-contracts", "risk-management",
+  "position-sizing", "execution", "market-microstructure",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Programming Language :: Python :: 3",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = []          # the core package is standard library only
+
+[project.optional-dependencies]
+# Only the signing layer needs third-party code. Everything else — feeds, risk,
+# exposure, monitoring, the gates — runs on the standard library alone.
+signing = [
+  "cryptography==50.0.0",
+  "eth-account==0.13.7",
+  "eth-abi==5.2.0",
+  "eth-utils==5.3.1",
+  "httpx[http2]==0.28.1",
+  "h2==4.4.1",
+  "pydantic==2.13.4",
+  "websockets==15.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/ailinsun/MarketFlow"
+Source = "https://github.com/ailinsun/MarketFlow"
+
+# No console scripts. The demonstration reads fixtures relative to its own location,
+# so it belongs to a checkout (`make demo`) rather than to an installed distribution,
+# and an entry point that only works from a source tree is a broken promise.
+
+[tool.setuptools]
+packages = [
+  "marketflow", "marketflow.feeds", "marketflow.risk", "marketflow.execution",
+  "marketflow.guardian", "marketflow.monitor", "marketflow.mcp",
+]
+
+[tool.setuptools.package-data]
+"marketflow.execution" = ["templates/*.json"]

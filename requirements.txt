@@ -1,1 +1,11 @@
-# Python standard library only; no third-party runtime dependencies.
+# The MarketFlow core is standard library only. Feeds, risk budgets, exposure
+# accounting, market gates, monitoring and every offline self-test run on a bare
+# Python 3.9+ with nothing installed:
+#
+#     make verify
+#
+# Third-party code is needed only to SIGN and SUBMIT orders. That set is pinned
+# separately so the read-only half of the system can never be made to depend on it:
+#
+#     python3 -m venv .venv
+#     .venv/bin/pip install -r requirements-signing.txt

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Reconcile local taker BUY fills into a three-party zero-sum ledger.
 
-预测市场零和账本。保留原始逐笔会计口径和自测；公开版只读调用方提供的本地数据。
+Zero-sum ledger for prediction markets. It keeps the original per-fill accounting
+convention and its self-test, and reads only local data the caller supplies.
 Each fill contributes taker net = gross selection minus fee, maker net = minus
 gross selection, and venue receipts = fee. Missing metadata, unsettled markets,
 unknown fee rates and invalid prices are dropped and counted.
@@ -31,15 +32,18 @@ SCHEMA = "marketflow-zero-sum-ledger-v0.1"
 
 
 def fee_per_dollar(price: float, rate: float) -> float:
-    """每 $1 名义投入的 taker 费。
+    """Taker fee per $1 of notional.
 
-    referenced section 核实机制: 每股费 = rate·p·(1−p); $1 买到 1/p 股 ⟹ 每 $1 费 = rate·(1−p)。
-    近确定区 (p→1) 费趋近 0 —— 这本身就是层 C 的结构优势之一。
+    The per-share fee is rate * p * (1 - p), and $1 buys 1/p shares, so the fee per
+    dollar is rate * (1 - p). It goes to zero as p approaches 1: buying something the
+    market already believes is nearly certain is nearly free, which is a structural
+    property of the schedule rather than a market condition.
     """
     return rate * (1.0 - price)
 
 def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """小概率的置信区间必须用 Wilson —— 正态近似在 k 很小时会给出负下界那种废数。"""
+    """Wilson interval. A normal approximation on a small count produces a negative
+    lower bound, which is not a conservative answer but a meaningless one."""
     if n <= 0:
         return (0.0, 1.0)
     p = k / n
@@ -57,30 +61,37 @@ def _token_price(meta: dict, token: str) -> float | None:
     return None
 
 def token_settlement(meta: dict, token: str) -> float | None:
-    """token 在该市场的**结算价** (1.0 赢 / 0.0 输)。未结算 / 不在该市场 → None。
+    """The token's **settlement** price in this market: 1.0 won, 0.0 lost, None if the
+    market has not settled or the token is not in it.
 
-    C4 之后 cache 里同时有未结算市场, 它们的 `outcome_prices` 是当前市价 —— 拿它当结算价
-    会把一个 0.992 的活票记成「已经赢了」。所以这里以 `closed` 位为准硬闸;
-    要盯市值请走 `token_mark`, 两个口径分开记, 不合并。
-    旧缓存条目 (无 `closed` 字段) 一律按已结算处理 —— 它们是 closed=true 抓回来的。"""
+    The cache also holds unsettled markets, whose `outcome_prices` are current
+    quotes. Reading those as settlement prices would book a live ticket trading at
+    0.992 as already won. The `closed` flag is therefore a hard gate here. For a
+    mark-to-market value use `token_mark` instead: the two conventions are recorded
+    separately and are never merged.
+
+    A legacy cache entry with no `closed` field is treated as settled, because those
+    entries were only ever fetched with closed=true."""
     if not meta:
         return None
     if "closed" in meta and not meta.get("closed"):
         return None
     return _token_price(meta, token)
 
-# ── 逐笔口径 (纯函数, 零 IO — 外部人可以只抄这一段) ────────────────────────
+# -- per-fill accounting: pure functions, no I/O. This section alone is enough to
+#    reproduce the ledger identity independently.
 
 def trade_rows(price: float, size: float, settle: float, rate: float) -> dict[str, float]:
-    """一笔 taker BUY 在三方账本上各记多少钱 (美元)。
+    """What one taker BUY books to each of the three parties, in dollars.
 
-    notional  = 投入的名义额 (分母)
-    gross     = 毛选边 = (settle − px)·sz   ← taker 相对对手方赢/输的
-    fee       = rate·px·(1−px)·sz           ← 每股费 × 股数
+    notional  the notional put up, which is the denominator
+    gross     (settle - px) * sz, what the taker won or lost against the counterparty
+    fee       rate * px * (1 - px) * sz, the per-share fee times the shares
     taker_net = gross − fee
-    maker_net = −gross                      ← 对手方不付 taker 费
+    maker_net -gross, since the counterparty pays no taker fee
     protocol  = +fee
-    三者相加恒为 0, 与 price/settle/rate 取值无关 (见 selftest)。
+    The three sum to exactly zero for any price, settlement and rate; the self-test
+    asserts it across a grid rather than at one point.
     """
     notional = price * size
     gross = (settle - price) * size
@@ -99,7 +110,7 @@ def iter_tape(path: str) -> Iterable[dict[str, Any]]:
                 continue
 
 
-# ── 账本 ────────────────────────────────────────────────────────────────
+# -- the ledger ----------------------------------------------------------------
 
 def build_ledger(tape_path: str, meta: dict[str, dict], fees: dict[str, dict],
                  buy_only: bool = True) -> dict[str, Any]:
@@ -124,13 +135,14 @@ def build_ledger(tape_path: str, meta: dict[str, dict], fees: dict[str, dict],
             markets_dropped.add(cid or "")
             continue
         settle = token_settlement(m, token)
-        if settle is None:                       # 未结算 → 无结果可记, 绝不拿市价冒充
+        if settle is None:                       # unsettled: no outcome to book, and a
+            #                                      quote is never substituted for one
             drop["unsettled"] += 1
             markets_dropped.add(cid or "")
             continue
         f = fees.get(cid or "") or {}
         rate = f.get("rate")
-        if rate is None:                         # 不知道费率就不猜, 整笔丢弃
+        if rate is None:                         # an unknown fee rate is dropped, not guessed
             drop["no_fee_rate"] += 1
             markets_dropped.add(cid or "")
             continue
@@ -238,29 +250,31 @@ def selftest() -> int:
         else:
             fails.append(name)
 
-    # 恒等式必须与取值无关 —— 这是整个模块唯一不能错的东西
+    # The identity must hold for every input. It is the one thing in this module that
+    # cannot be allowed to be wrong.
     for px, sz, settle, rate in ((0.30, 100, 1.0, 0.05), (0.97, 3, 0.0, 0.05),
                                  (0.5, 7, 1.0, 0.0), (0.02, 1000, 0.0, 0.07)):
         r = trade_rows(px, sz, settle, rate)
-        check(f"闭合 px={px} settle={settle}",
+        check(f"closes at px={px} settle={settle}",
               abs(r["taker_net"] + r["maker_net"] + r["protocol"]) < 1e-9)
-    # 每 $1 费必须等于既有单点真理 fee_per_dollar
+    # The per-fill fee must agree with the closed form for fee per dollar.
     r = trade_rows(0.30, 100, 1.0, 0.05)
-    check("费口径与 fee_per_dollar 一致",
+    check("fee agrees with the closed form",
           abs(r["fee"] / r["notional"] - fee_per_dollar(0.30, 0.05)) < 1e-12)
-    # maker 不付 taker 费
-    check("maker 净 = −毛选边", abs(r["maker_net"] + r["gross"]) < 1e-12)
-    # taker 净 = 毛 − 费
-    check("taker 净 = 毛 − 费", abs(r["taker_net"] - (r["gross"] - r["fee"])) < 1e-12)
-    # 0 费率市场: 协议行必须真的是 0
+    # the maker pays no taker fee
+    check("maker net is minus the gross", abs(r["maker_net"] + r["gross"]) < 1e-12)
+    # taker net is gross minus fee
+    check("taker net is gross minus fee", abs(r["taker_net"] - (r["gross"] - r["fee"])) < 1e-12)
+    # a zero-rate market books exactly zero to the venue
     r0 = trade_rows(0.5, 7, 1.0, 0.0)
-    check("0 费率 ⟹ 协议行为 0", r0["protocol"] == 0.0 and r0["taker_net"] == r0["gross"])
-    # 价带边界
-    check("价带边界", _band(0.049) == "0.00-0.05" and _band(0.05) == "0.05-0.10"
+    check("a zero rate books zero to the venue",
+          r0["protocol"] == 0.0 and r0["taker_net"] == r0["gross"])
+    # price-band boundaries
+    check("price-band boundaries", _band(0.049) == "0.00-0.05" and _band(0.05) == "0.05-0.10"
           and _band(0.999) == "0.98-1.00")
-    # Wilson 复用的是既有实现
+    # Wilson interval, shared with the rest of the repository
     lo, hi = wilson_interval(68, 955)
-    check("wilson 复用", lo < 0.0712 < hi)
+    check("wilson interval brackets the point estimate", lo < 0.0712 < hi)
 
     print(json.dumps({"schema": SCHEMA + "-selftest", "PASS": not fails,
                       "checks_ok": ok, "failed": fails}, ensure_ascii=False, indent=2))
