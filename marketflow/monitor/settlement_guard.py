@@ -474,7 +474,10 @@ def selftest() -> dict[str, Any]:
 
 if __name__ == "__main__":
     import json as _json
+    import sys as _sys
 
+    if "--selftest" not in _sys.argv[1:]:
+        raise SystemExit("usage: python3 -m marketflow.monitor.settlement_guard --selftest")
     rep = selftest()
     print(_json.dumps(rep, ensure_ascii=False, indent=2))
     raise SystemExit(0 if rep["PASS"] else 1)

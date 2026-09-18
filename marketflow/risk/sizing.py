@@ -410,6 +410,10 @@ def selftest() -> dict:
 if __name__ == "__main__":
     import json
     import sys
+    if "--selftest" not in sys.argv[1:]:
+        # The only mode this module has: it computes, it never trades. Refuse an
+        # unexpected argument rather than silently ignoring it.
+        raise SystemExit("usage: python3 -m marketflow.risk.sizing --selftest")
     r = selftest()
     print(json.dumps(r, ensure_ascii=False, indent=2))
     sys.exit(0 if r["ok"] else 1)
