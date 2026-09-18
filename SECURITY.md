@@ -12,16 +12,18 @@ reading and running this code on your own judgment.
 
 ## Threat model
 
-This system holds no user funds and never has custody in the architectural sense. What
-it does have is the ability to place orders. The threats it is designed against, in
-order of how much they cost when they happen:
+This system holds no user funds and never takes custody of an account. What it has is
+the ability to place orders on an account whose owner delegated exactly that. Those
+threats, in order of how much they cost when they happen:
 
 | Threat | Defence | Enforced by |
 |---|---|---|
-| Key exfiltration | keys live in a signing enclave; the service holds none | `guardian.turnkey` |
-| Unauthorised withdrawal | the signing policy cannot express a transfer out | scoped enclave policy |
-| A single compromised signer | root authority needs a quorum of at least two | `guardian.authority`, with a test |
+| Key exfiltration | the trading key lives in the account holder's enclave; this service holds only a side-bound agent credential, never a wallet or root key | `guardian.turnkey` |
+| Unauthorised withdrawal | the agent's policy can express one order shape and no transfer | scoped enclave policy |
+| A single compromised signer | the account holder's root quorum needs at least two signers, and the service is not a member of it | `guardian.authority`, with a test |
+| An agent that outlives its mandate | the authority proof expires, and every arm and signature re-reads it | `guardian.authority`, `guardian.arm` |
 | Runaway execution | arm state, caps, drawdown fuse, kill file | `execution.orders`, with tests |
+| A mismatched or foreign mandate | authority proof checked against the encrypted tenant record (sub-org, signer, funder, agent key) | `guardian.executor` |
 | Replayed or duplicated orders | idempotency key per intent | `execution.orders` |
 | Acting on a market that will not settle cleanly | resolution gate, on-chain oracle read | `risk.resolution`, `monitor.settlement_guard` |
 | A silently stopped money path | heartbeat freshness watchdogs | `risk.money_path`, `monitor.watchdog` |
@@ -31,10 +33,10 @@ order of how much they cost when they happen:
 
 Everything from a venue API or a chain read is **untrusted input**. A missing or
 malformed field is a refusal, never a default that widens a limit. Fallbacks are
-chosen so that failure tightens rather than loosens: an unknown fee rate falls back to
-a *higher* assumed fee; an unreadable arm state resolves to *dry run*; an unavailable
-filter yields *no* filtering with the source recorded, rather than silently passing
-everything.
+chosen so that failure tightens rather than loosens: an unknown fee rate may be
+*estimated* for a dry run but **refuses a live taker order**; an unreadable arm state
+resolves to *dry run*; an unavailable filter yields *no* filtering with the source
+recorded, rather than silently passing everything.
 
 The one-way arrow matters more than any individual check: analysis may feed execution,
 execution may request authority, and nothing flows back. `marketflow.risk.exposure`
@@ -79,6 +81,10 @@ at, so a changed or added binary fails until a human looks at it.
 
 - **No credential storage of any kind in this repository.** `.env.example` holds
   placeholders; `.env` is git-ignored.
+- **No local private-key path.** The credential store refuses a wallet key, a root
+  credential or an all-sides agent credential, and there is no second signing backend
+  to fall back to: a tenant record that is not a user-root delegation cannot sign at
+  all.
 - **No automated entry without an allow-listed source.** Automation exits positions;
   entry requires an explicitly configured signal source.
 - **No path by which the trading service can withdraw funds.** This is a property of

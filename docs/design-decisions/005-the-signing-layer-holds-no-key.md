@@ -2,9 +2,11 @@
 
 ## Decision
 
-The service never holds a private key. Keys live in a signing enclave, and the service
-requests signatures under a scoped policy that **cannot express a transfer out**. Root
-authority over that configuration requires a quorum of at least two signers.
+The service never holds a private key. A delegated mandate is a sub-organization the
+account holder controls: the trading key lives in that enclave, and the service holds
+only the API credentials of two side-bound agents, whose policies **cannot express a
+transfer out**. Authority over that configuration is the account holder's root quorum,
+which requires at least two signers and which the service is not a member of.
 
 ## Why
 
@@ -19,9 +21,11 @@ than by auditing every path that touches a wallet.
 
 ## What this rules out
 
-- **Any local key material**, including "temporarily" during onboarding. The legacy
-  hosted path that predates this is disabled behind
-  `MARKETFLOW_ALLOW_LEGACY_HOSTED_ONBOARDING` and defaults off.
+- **Any local key material, anywhere.** The credential store refuses a wallet key, a
+  root credential or an all-sides agent credential, and there is no second signing
+  backend: a record that is not a user-root delegation cannot obtain a client at all.
+- **A platform-held root.** The service never holds an organization root credential;
+  the signing path reads the mandate's own record and refuses everything else.
 - **A single-signature root.** `MARKETFLOW_MIN_ROOT_QUORUM` is floored at 2 in code: a
   lower value is ignored, a higher one honoured. `guardian.authority` refuses a
   single-signature root configuration and a self-test asserts the refusal, so the

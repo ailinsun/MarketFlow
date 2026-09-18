@@ -87,7 +87,7 @@ capital base:
 | Total deployment | 20% | $200,000 |
 | Per trade | 0.5% | $5,000 |
 | Drawdown fuse, per budget epoch | 2% | $20,000 |
-| Owner ceiling, per trade | 5% | $50,000 |
+| Operator ceiling, per trade | 5% | $50,000 |
 
 Mandate tiers layer on top: `standard` allows half the mandate deployed with 2% per
 trade and a 10% drawdown fuse; `professional` allows the full mandate, 5% and 20%.
@@ -102,20 +102,41 @@ fractions too, so they remain ceilings at any size.
 capital base and every assertion still holds, which is what makes the claim "this
 scales" checkable rather than aspirational.
 
-## 5. Fees: why the band filter exists
+## 5. Fees and the probability band
 
-The prevailing schedule charges `rate * p * (1 - p)` per share. That curve peaks at
-p = 0.5 and vanishes at both ends. One curve therefore does two things at once: it
-taxes information most heavily exactly where the market knows least, and exempts
-trading where the outcome is already known.
+The band gate has two ends, and each comes from a different kind of reason. Keeping
+them apart is the point of this section: one is arithmetic, the other is a measured
+behavioural fact, and a third — the high end — is a risk-shape choice.
 
-Two consequences the system is built around:
+**What the fee schedule does (arithmetic).** The prevailing schedule charges
+`rate * p * (1 - p)` per share, which in the units that matter for a decision is
+`rate * (1 - p)` per dollar deployed:
 
-- **Near-certain tickets are nearly free to trade**, which is the structural cause of
-  wash-volume contamination, and why volume-based rankings are unreliable.
-- **Round-trip cost relative to remaining upside explodes at both ends**, which is what
-  the probability-band gate is enforcing. It is arithmetic, not taste, and
-  `instruments/fee_geometry.py` recomputes it in one command.
+- In *absolute* terms the fee is largest at p = 0.5 and goes to zero at both ends.
+- In *relative* terms — fee per dollar staked — it is largest as p approaches 0 and
+  falls monotonically as p rises. Near-certain tickets are the cheapest in the market
+  to trade, which is why a dollar-volume ranking can be manufactured almost for free
+  (section 2 above, and the farm filter).
+
+`instruments/fee_geometry.py` recomputes both curves in one command. Nothing in this
+section claims the fee curve alone explains the price bands used below.
+
+**The low end (measured).** In the frozen ledger, takers buying below 10 cents lost
+about half their notional *before* fees (−54.6% for 0–5 cents, −47.8% for 5–10 cents),
+and turns roughly flat only above 20 cents. That is the favourite-longshot bias — cheap
+contracts are overpriced — not a fee effect: the fee in that band was under 5% of
+notional. The band's low end encodes that measurement, and it is why the ledger's fee
+column must never be read as the explanation for the loss.
+
+**The high end (a risk-shape choice, not a finding).** Above 0.85 the most a position
+can gain is 15 cents per dollar staked while a single adverse resolution loses the
+stake, so a small probability error erases the trade. This is a default, not an edge
+result — in the same ledger, takers buying between 0.80 and 0.98 were *positive* gross
+— which is exactly why it is configurable rather than fixed.
+
+**What the system does not claim.** Not that the band is derived from fee geometry. Not
+that a low price is dangerous *because of fees*. The band is a hard filter; the
+after-cost edge test beside it is advisory and belongs to the sizer.
 
 ## 6. Settlement: a risk, not a formality
 

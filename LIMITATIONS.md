@@ -6,13 +6,29 @@ should be read.
 
 ## Scale and operating history
 
-**This system has been run against a live venue at small scale by its author.** It has
-not been operated at institutional size. The capital-relative design means the same
-code paths govern any size, and tests assert that the limits scale — but *tested to
-scale* and *operated at scale* are different claims, and only the first is made here.
+**No part of this system has been operated with production capital.** There has been no
+funded account, no live order placement and no profit or loss to report. Stating the
+boundary precisely, because the difference matters:
 
-Active development has ended. The verification suite runs in CI on every push, so
-"it still works" is checkable; "it is maintained" is not claimed.
+- **Measurements** are built from public venue data: public market metadata, public
+  order-book and trade endpoints, and public on-chain reads. They are observations of
+  public data, not of any account.
+- **Execution** — the order module, its fuses, the exit-first daemon, the delegated
+  mandate service — is exercised by offline self-tests and synthetic fixtures under
+  the dry-run path. The live branch of that code has never been run against a real
+  account.
+- **The signing and authority layer** talks to a signing service's own API and the
+  venue SDK's own builders; its policy conditions, refusals and authority proofs are
+  pinned by offline tests. That is a statement about the layer's mechanics, not about
+  a trade that happened.
+
+The capital-relative design means the same code paths govern any size, and tests
+assert that the limits scale — but *tested to scale* and *operated at scale* are
+different claims, and only the first is made here.
+
+Feature development has ended; releases since then correct and simplify. The
+verification suite runs in CI on every push, so "it still works" is checkable; "it is
+maintained" is not claimed.
 
 ## What the measurements establish, and what they do not
 
@@ -35,9 +51,11 @@ The venue schedules used are historical assumptions rather than a statement of c
 pricing.
 
 **The repeated-size signature** describes behaviour. It does **not** establish identity,
-common control, intent, or anything about future performance. The 500-fold difference
-in contamination between ranking conventions is a fact about the two conventions on
-that sample, not a universal law.
+common control, intent, or anything about future performance. The gap between the two
+ranking conventions on that sample — 46.2% of the top 5,000 by dollar volume against
+0.0% by trade count times breadth, on a 5.9% population baseline — is a fact about
+those two conventions on that sample, not a universal law. Whether a ratio between them
+is even defined depends on the sort key, which is the point.
 
 **The settlement rate** (7.12% of settled disputes changed the proposal) is a
 historical conditional rate. It is not a forecast for an individual contract.
@@ -65,8 +83,11 @@ their own terms.
   mark. That assumption fails precisely in the conditions where exposure matters.
 - **Settlement-timing correlation is not modelled.** Buckets are treated as
   independent at portfolio level; many contracts settling the same day are not.
-- **The multi-tenant layer is a dry-run skeleton.** It proves the decision loop
-  isolates tenants; it has not run production money across tenants.
+- **The multi-tenant layer is a decision loop, not a live service.** It reads public
+  positions and produces per-tenant decisions in isolated namespaces; it holds no key
+  and has never run production money across tenants. The delegated-mandate service
+  (`marketflow.guardian`) is the component that would execute, and its live path has
+  likewise never been operated.
 - **One self-test is skipped** without the optional signing install, because it pins
   the venue SDK's contract surface and needs the SDK present.
 - **The venue SDK is pinned to a commit**, not a release, because the project does not

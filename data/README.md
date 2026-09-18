@@ -1,5 +1,11 @@
 # Data
 
+This is the **reproducible-evidence** tier of the repository: frozen aggregate
+snapshots that `make verify` re-checks, and the schemas they follow. The executable
+system is [`marketflow/`](../marketflow/) and the measurement methods are
+[`instruments/`](../instruments/); dated working documents are
+[`reports/`](../reports/) and are historical archive, not current method.
+
 Frozen research snapshots and schemas; filenames and all numerical JSON values are preserved. Only identifying infrastructure strings and unavailable internal references were scrubbed. The filename hash is the original method/content version, not a checksum of the redacted file bytes.
 
 No raw trading tape, wallet lists or collector caches are distributed. The whale exposure table keeps its numerical rows with address and label fields omitted. The clean-ranking release contains aggregates without either per-wallet list.

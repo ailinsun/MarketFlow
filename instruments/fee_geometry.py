@@ -5,12 +5,19 @@ dependency.
 
 **Why this module exists.** The major event-contract venues charge from the same
 family of curves: a hump of the form `r * p * (1 - p)` per share, with a maker
-paying zero or a fraction of the taker rate. That curve peaks at p = 0.5 and goes
-to zero at both ends, which means it levies its highest tax exactly where the
-market least knows the answer, and almost none where the market already knows.
-One curve therefore does two things at once: **it taxes information heavily and
-exempts noise**. The second half is the structural cause of wash-volume
-contamination — the same reasoning appears at the top of the farm filter.
+paying zero or a fraction of the taker rate. Two readings of that curve matter, in
+different units:
+
+- **per share** (absolute): largest at p = 0.5, zero at both ends;
+- **per dollar deployed** (`r * (1 - p)`): largest as p approaches 0, falling
+  monotonically as p rises.
+
+The second reading is the one that explains the measured complaint. A near-certain
+ticket is the cheapest thing in the market to trade, so a dollar-volume figure can
+be manufactured at almost no cost — the structural cause of wash-volume
+contamination, and the same reasoning appears at the top of the farm filter. What
+this module does *not* claim is that the curve is highest where the market knows
+least: that is an interpretation of p = 0.5, not a property of the algebra.
 
 This module turns that defect and its solution into arithmetic anybody can
 recompute.
