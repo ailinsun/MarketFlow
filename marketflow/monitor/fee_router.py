@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-venue fee intelligence for MarketFlow (read-only; never places orders).
 
-The hot path reads an atomically refreshed cache, so Telegram replies do not wait
+The hot path reads an atomically refreshed cache, so a query does not wait
 for a venue catalogue crawl.  Cost math is deliberately explicit and keeps
 unknown maker schedules out of the "cheapest" verdict.
 """

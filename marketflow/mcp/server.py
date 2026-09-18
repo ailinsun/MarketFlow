@@ -45,8 +45,9 @@ CLOB = "https://clob.polymarket.com"
 # Optional local tape written by marketflow.feeds.smart_money. Absent by default;
 # the endpoint that reads it degrades rather than failing when it is not set.
 WHALE_FEED = os.environ.get("MARKETFLOW_WHALE_FEED", "")
-UA = {"User-Agent": "marketflow-data-plane/0.1 (+https://example.invalid)"}
-PORT = 8791
+UA = {"User-Agent": "marketflow-data-plane/0.2 (+https://github.com/ailinsun/MarketFlow)"}
+# The server binds 127.0.0.1 only (see __main__); the port is the deployment's choice.
+PORT = int(os.environ.get("MARKETFLOW_MCP_PORT") or 8791)
 MAX_BODY_BYTES = 65_536
 MAX_UPSTREAM_BYTES = 4_000_000
 MAX_BATCH_REQUESTS = 20

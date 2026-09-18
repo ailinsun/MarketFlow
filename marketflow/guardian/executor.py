@@ -1,23 +1,26 @@
-"""Guardian per-tenant execution adapter (exits + allow-listed automated entry).
+"""Guardian per-mandate execution adapter (exits + allow-listed automated entry).
 
-Turns a multitenant DECISION (exit) or an allow-listed SIGNAL (entry) into a
-Polymarket order through S1's canonical fuse gate, with hosted-tenant hardening
-layered on top of the single-tenant stack — never widening a single fuse:
+Turns a position DECISION (exit) or an allow-listed SIGNAL (entry) into a
+Polymarket order through the order module's canonical fuse gate, with
+delegated-mandate hardening layered on top -- never widening a single fuse:
 
-  * caps          : USER-SET per tenant (their own risk preference), clamped only
-                    by fat-finger ceilings; conservative starter defaults when
-                    unset. NEVER owner_fuse_caps (the owner's own stack path).
-  * arm           : guardian writer/ack + tenant-bound arm file,
+  * caps          : set per mandate (the holder's own risk policy), clamped only
+                    by fat-finger ceilings; conservative opening defaults when
+                    unset. Never the operator's own caps.
+  * arm           : guardian writer/ack + mandate-bound arm file,
                     plus a global GUARDIAN_LIVE_ENABLED kill that forces dry_run
-                    for ALL tenants.
-  * wallet        : expected_wallet_type = DEPOSIT_WALLET (hosted wallets are
-                    Polymarket Deposit Wallet proxies, same as the owner stack).
-  * secrets       : decrypted from the tenant's Fernet blob ONLY when a plan is
-                    live-cleared; handed straight to build_secure_client(dict);
-                    never written to disk in plaintext.
-  * side          : SELL is always available. BUY (260725, spec
-                    260725_guardian-entry-capability-ruling) requires ALL of:
-                    arm mode `entry_flb`, the fleet gate GUARDIAN_ENTRY_ENABLED,
+                    for ALL mandates.
+  * authority     : every signature re-validates the account holder's user-root
+                    authority proof (`authority.py`); the signer is an enclave
+                    agent in the holder's own sub-organization (`turnkey.py`).
+  * wallet        : expected_wallet_type = DEPOSIT_WALLET (the holder's own
+                    Polymarket Deposit Wallet).
+  * secrets       : the agents' API credentials, decrypted from the mandate's
+                    encrypted blob ONLY when a plan is live-cleared and never
+                    written to disk in plaintext. There is no private key to
+                    decrypt: the trading key stays in the enclave.
+  * side          : SELL is always available. BUY requires ALL of:
+                    arm mode `entry_allowlisted`, the fleet gate GUARDIAN_ENTRY_ENABLED,
                     a signal whose source is in ENTRY_SOURCE_ALLOWLIST, a price
                     inside the tenant profile's evidence-backed band, and room
                     under caps / balance / daily position count. Exits are never
@@ -25,7 +28,7 @@ layered on top of the single-tenant stack — never widening a single fuse:
                     risk-reducing direction must stay open.
 
 Every path is dry_run unless (GUARDIAN_LIVE_ENABLED present) AND (tenant arm file
-valid for guardian expectations) AND (S1's own fuses pass). Any doubt → dry_run.
+valid for guardian expectations) AND (the order module's own fuses pass). Any doubt → dry_run.
 """
 
 from __future__ import annotations
@@ -41,17 +44,16 @@ from marketflow.guardian import wallet as gwallet  # noqa: E402
 from marketflow.guardian import store as gstore  # noqa: E402
 from marketflow.guardian import traps as gtraps  # noqa: E402  (structural-trap rules; can only refuse)
 
-# Guardian arm identity. These are the writer/ack a guardian
-# tenant arm file must carry; they are distinct from the bridge single-tenant
-# path so neither can ever arm the other.
+# Guardian arm identity: the writer and acknowledgement a delegated mandate's arm
+# file must carry. They differ from the operator's single-tenant arm file, so
+# neither can ever arm the other.
 GUARDIAN_ARM_WRITER = "guardian_service"
 GUARDIAN_LIVE_ACK = "GUARDIAN_TENANT_APPROVES_AUTO_EXIT"
 
-# Hosted wallets are Polymarket Deposit Wallets: SecureClient.create derives (and
-# on first use gaslessly deploys) a Deposit Wallet proxy for the generated EOA;
-# the client ACTS ON that proxy, so detect_wallet reports DEPOSIT_WALLET — same
-# funder model as the owner's own stack. (An "EOA" assertion here would fail every
-# live exit at the pre-sign wallet check.)
+# A delegated mandate trades from the account holder's Polymarket Deposit Wallet:
+# the enclave-held EOA signs, and the client ACTS ON the Deposit Wallet, so
+# detect_wallet reports DEPOSIT_WALLET. (An "EOA" assertion here would fail every
+# live order at the pre-sign wallet check.)
 EXPECTED_WALLET_TYPE = "DEPOSIT_WALLET"
 CLIENT_BUILD_TIMEOUT_SEC = 25.0
 
@@ -89,9 +91,9 @@ TENANT_DEFAULT_DRAWDOWN_USD = MANDATE_CAPITAL_USD * MANDATE_DEFAULT_DRAWDOWN_FRA
 TENANT_CAP_CEILING_TOTAL_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["standard"]["total"]
 TENANT_CAP_CEILING_PER_TRADE_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["standard"]["per_trade"]
 TENANT_CAP_CEILING_DRAWDOWN_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["standard"]["drawdown"]
-PRIME_CAP_CEILING_TOTAL_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["total"]
-PRIME_CAP_CEILING_PER_TRADE_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["per_trade"]
-PRIME_CAP_CEILING_DRAWDOWN_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["drawdown"]
+PROFESSIONAL_CAP_CEILING_TOTAL_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["total"]
+PROFESSIONAL_CAP_CEILING_PER_TRADE_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["per_trade"]
+PROFESSIONAL_CAP_CEILING_DRAWDOWN_USD = MANDATE_CAPITAL_USD * MANDATE_TIERS["professional"]["drawdown"]
 
 
 def tenant_caps(entry: dict[str, Any] | None) -> Any:
@@ -103,7 +105,7 @@ def tenant_caps(entry: dict[str, Any] | None) -> Any:
     pmx = _pmx()
     rules = entry.get("rules") if isinstance(entry, dict) and isinstance(entry.get("rules"), dict) else {}
     tier = str(entry.get("mandate_tier") or "") if isinstance(entry, dict) else ""
-    prime = tier == "professional"
+    professional = tier == "professional"
 
     def _val(key: str, default: float) -> float:
         v = pmx.to_float(rules.get(key))
@@ -113,9 +115,12 @@ def tenant_caps(entry: dict[str, Any] | None) -> Any:
         max_total_deploy_usd=_val("max_total_usd", TENANT_DEFAULT_TOTAL_USD),
         max_per_trade_usd=_val("max_per_trade_usd", TENANT_DEFAULT_PER_TRADE_USD),
         max_drawdown_usd=_val("max_drawdown_usd", TENANT_DEFAULT_DRAWDOWN_USD),
-        ceiling_total_usd=PRIME_CAP_CEILING_TOTAL_USD if prime else TENANT_CAP_CEILING_TOTAL_USD,
-        ceiling_per_trade_usd=PRIME_CAP_CEILING_PER_TRADE_USD if prime else TENANT_CAP_CEILING_PER_TRADE_USD,
-        ceiling_drawdown_usd=PRIME_CAP_CEILING_DRAWDOWN_USD if prime else TENANT_CAP_CEILING_DRAWDOWN_USD,
+        ceiling_total_usd=(PROFESSIONAL_CAP_CEILING_TOTAL_USD if professional
+                           else TENANT_CAP_CEILING_TOTAL_USD),
+        ceiling_per_trade_usd=(PROFESSIONAL_CAP_CEILING_PER_TRADE_USD if professional
+                               else TENANT_CAP_CEILING_PER_TRADE_USD),
+        ceiling_drawdown_usd=(PROFESSIONAL_CAP_CEILING_DRAWDOWN_USD if professional
+                              else TENANT_CAP_CEILING_DRAWDOWN_USD),
     )
 
 SELL_DECISIONS = ("STOP_LOSS_SELL", "TAKE_PROFIT_SELL", "SELL_SIGNAL", "TRIM_SELL_SIGNAL")
@@ -131,7 +136,7 @@ SELL_DECISIONS = ("STOP_LOSS_SELL", "TAKE_PROFIT_SELL", "SELL_SIGNAL", "TRIM_SEL
 ENTRY_SOURCE_ALLOWLIST = tuple(
     s.strip() for s in os.environ.get("MARKETFLOW_ENTRY_SOURCES", "").split(",") if s.strip()
 )
-ARM_MODE_ENTRY_FLB = "entry_flb"
+ARM_MODE_ENTRY_ALLOWLISTED = "entry_allowlisted"
 
 # Execution policies. A mandate picks a name; these map it onto parameters.
 # Absolute exposure stays governed by the mandate's own caps — a policy decides
@@ -176,8 +181,9 @@ class _Timeout(Exception):
 
 
 def _with_hard_timeout(seconds: float, label: str, fn: Callable[[], Any]) -> Any:
-    """SIGALRM wall-clock bound on an idempotent network build (daemon pattern). SecureClient.create runs several serial CLOB reads that can hang;
-    a stuck build raises rather than wedging the tick. Main-thread only — the
+    """SIGALRM wall-clock bound on an idempotent network build. Building a client
+    runs several serial CLOB reads that can hang; a stuck build raises rather than
+    wedging the tick. Main-thread only — the
     service tick always runs there. NEVER wraps execute_order (a posted order is
     not signal-interruptible)."""
 
@@ -206,47 +212,41 @@ def build_client_for_tenant(
     side: str | None = None,
     maker_amount_base_units: int | None = None,
 ) -> Any:
-    """Build this tenant's SecureClient on whichever key backend it is on.
+    """Build this mandate's SecureClient. There is exactly one way to sign.
 
-    `turnkey`: the private key never leaves Turnkey's enclave and the credential
-    this process holds can only sign CLOB orders under a policy-enforced notional
-    cap — so a compromised Guardian cannot transfer funds out, though it could
-    still trade the account badly (marketflow/guardian/turnkey.py carries both the evidence
-    and the limits). `local` (default): the historical path, key decrypted from
-    the tenant's Fernet blob.
+    The trading key never leaves the enclave, and the credential this process
+    holds belongs to a side-bound agent the account holder's root created. A
+    compromised Guardian therefore cannot transfer funds out, though it could
+    still trade an account badly; marketflow/guardian/turnkey.py states the limits.
 
-    Dispatch reads `key_backend` and nothing else. It is deliberately ONE-WAY: a
-    Turnkey-backed tenant with the fleet gate shut refuses to trade rather than
-    reverting to its local key, because reverting would hand back exactly the
-    fund-moving capability the migration removed — and it would take only write
-    access to a runtime directory to trigger.
+    Refused, in order: a record that is not a user-root delegation or a closed
+    fleet gate (`assert_turnkey_path_available`), a missing or stale authority
+    proof, and any mismatch between the proof and the encrypted record (sub-org,
+    signer, funder, or the agent's public key). There is no fallback backend, so
+    no refusal can hand back the ability to move funds.
     """
+    from marketflow.guardian import authority as gauth
     from marketflow.guardian import turnkey as gturnkey
 
-    if gturnkey.tenant_is_turnkey_backed(secrets):
-        gturnkey.assert_turnkey_path_available(secrets)
-        if gturnkey.tenant_is_user_root(secrets):
-            from marketflow.guardian import authority as gauth
-
-            if not tenant_id:
-                raise gauth.AuthorityError("user-root client requires tenant identity")
-            record = gauth.load_authority(tenant_id)
-            summary = gauth.validate_user_root_authority(
-                record,
-                expected_tenant_id=tenant_id,
-                side=side,
-                expected_signer_address=secrets.get("turnkey_signer_address"),
-                expected_funder_address=secrets.get("funder_address"),
-                maker_amount_base_units=maker_amount_base_units,
-            )
-            if summary["suborg_id"] != str(secrets.get("turnkey_organization_id") or ""):
-                raise gauth.AuthorityError("authority suborg does not match encrypted tenant secret")
-            prefix = "turnkey_entry_agent" if side == "BUY" else "turnkey_exit_agent"
-            public_key = str(secrets.get(f"{prefix}_public_key") or "")
-            if public_key.lower() != str(summary["agent"]["api_public_key"]).lower():
-                raise gauth.AuthorityError("authority agent does not match encrypted tenant secret")
-        return gturnkey.build_turnkey_client(secrets, secret_dir=secret_dir, side=side)
-    return _pmx().build_secure_client(secrets, secret_dir=secret_dir)
+    gturnkey.assert_turnkey_path_available(secrets)
+    if not tenant_id:
+        raise gauth.AuthorityError("user-root client requires tenant identity")
+    record = gauth.load_authority(tenant_id)
+    summary = gauth.validate_user_root_authority(
+        record,
+        expected_tenant_id=tenant_id,
+        side=side,
+        expected_signer_address=secrets.get("turnkey_signer_address"),
+        expected_funder_address=secrets.get("funder_address"),
+        maker_amount_base_units=maker_amount_base_units,
+    )
+    if summary["suborg_id"] != str(secrets.get("turnkey_organization_id") or ""):
+        raise gauth.AuthorityError("authority suborg does not match encrypted tenant secret")
+    prefix = "turnkey_entry_agent" if side == "BUY" else "turnkey_exit_agent"
+    public_key = str(secrets.get(f"{prefix}_public_key") or "")
+    if public_key.lower() != str(summary["agent"]["api_public_key"]).lower():
+        raise gauth.AuthorityError("authority agent does not match encrypted tenant secret")
+    return gturnkey.build_turnkey_client(secrets, secret_dir=secret_dir, side=side)
 
 
 def tenant_arm_file(tenant_id: str) -> str:
@@ -270,10 +270,10 @@ def plan_exit_for_decision(
     book: Any = None,
     caps: Any = None,
 ) -> dict[str, Any] | None:
-    """Build + fuse-gate an EXIT order for a SELL-side decision. Returns the S1
-    plan dict (mode LIVE_PLAN / DRY_RUN_PLAN) or None if the decision is not a
-    sell. Pure planning — never signs. Live is additionally gated below by
-    GUARDIAN_LIVE_ENABLED, so in v0 this always plans DRY_RUN."""
+    """Build + fuse-gate an EXIT order for a SELL-side decision. Returns an
+    order-module plan dict (mode LIVE_PLAN / DRY_RUN_PLAN) or None if the decision
+    is not a sell. Pure planning -- never signs. Live additionally requires
+    GUARDIAN_LIVE_ENABLED; without it the plan is DRY_RUN."""
     if decision.get("decision") not in SELL_DECISIONS:
         return None
     pmx = _pmx()
@@ -303,8 +303,8 @@ def plan_exit_for_decision(
     plan = pmx.plan_order(
         intent,
         requested_live=live_gate,
-        # User-set caps under the tenant fat-finger ceiling; conservative starter
-        # defaults when unset. Never owner_fuse_caps (that path is the owner's own stack).
+        # The mandate's own caps under its fat-finger ceiling; conservative opening
+        # defaults when unset. Never the operator's own caps.
         caps=caps if caps is not None else tenant_caps(None),
         kill_file=tenant_kill_file(tenant_id),
         arm_state_file=tenant_arm_file(tenant_id),
@@ -323,28 +323,26 @@ def plan_exit_for_decision(
 
 
 def tenant_collateral_usd(funder_address: str | None, fetcher: Callable[[str], Any] | None = None) -> float | None:
-    """A hosted wallet's spendable Polymarket collateral (pUSD), read from public
-    chain data — no credentials, no signing.
+    """A mandate wallet's spendable Polymarket collateral (pUSD), read from public
+    chain data -- no credentials, no signing.
 
-    Sizing needs the real balance, not just the caps: caps say how much a tenant is
-    ALLOWED to deploy, the balance says what they actually HAVE. Sizing off caps
-    alone builds every order at the cap and the exchange rejects it (observed on
-    the owner account 260725, ). Returns None when unknown, and callers then
-    keep their cap-only behaviour with the exchange as backstop — a balance lookup
-    must never be able to block trading."""
+    Sizing needs the real balance, not just the caps: caps say how much a mandate
+    is ALLOWED to deploy, the balance says what it actually HAS. Sizing off caps
+    alone builds every order at the cap and the exchange rejects it. Returns None
+    when unknown, and callers then keep their cap-only behaviour with the exchange
+    as backstop -- a balance lookup must never be able to block trading."""
     addr = str(funder_address or "").strip()
     if not addr:
         return None
     try:
-        from marketflow.guardian import funding_watcher as fw  # noqa: E402  (sibling; owns the chain reader)
+        from marketflow import chain  # noqa: PLC0415  the single source of on-chain reads
         # Balance comes from an on-chain balanceOf call, never from an indexer
-        # snapshot: indexer token-balances have been measured lagging the chain by
-        # the better part of an hour, and an inflated balance makes sizing keep
-        # spending money that is already gone. The fetcher argument exists so the
-        # selftest can inject one.
+        # snapshot: an indexer can lag the chain, and an inflated balance makes
+        # sizing keep spending money that is already gone. The fetcher argument
+        # exists so the selftest can inject one.
         if fetcher is not None:
             return fetcher(addr)
-        return fw.pusd_balance_onchain(addr)
+        return chain.erc20_balance(addr)
     except Exception:
         return None
 
@@ -361,7 +359,7 @@ def plan_entry_for_intent(
     book: Any = None,
 ) -> dict[str, Any] | None:
     """Build + fuse-gate a BUY for one allow-listed signal. Pure planning — never
-    signs. Returns an S1 plan dict, or None when this tenant must not act on it.
+    signs. Returns an order-module plan dict, or None when this mandate must not act on it.
 
     Every gate below is a reason to NOT trade; none of them can create permission.
     Order matters: the cheap structural refusals come before any network read."""
@@ -400,7 +398,7 @@ def plan_entry_for_intent(
     if trap["blocked"]:
         return None
 
-    # Same market-quality gate as the owner stack (single source of truth), with
+    # Same market-quality gate as the operator path (single source of truth), with
     # the profile's band as the ceiling.
     from marketflow.execution import market_gate as mgate  # noqa: E402
     gate = mgate.market_quality_gate(
@@ -461,17 +459,17 @@ def plan_entry_for_intent(
         arm_expected_ack=GUARDIAN_LIVE_ACK,
         arm_expected_tenant=tenant_id,
     )
-    # S1 already refuses a BUY unless the arm mode permits it. This second, explicit
-    # check pins the mode to entry_flb specifically: S1 would also accept "full",
-    # and a hosted tenant must never be trading on a blanket authorisation even if
-    # an arm file were hand-edited to one.
+    # The order module already refuses a BUY unless the arm mode permits it. This
+    # second, explicit check pins the mode to entry_allowlisted specifically: the
+    # order module would also accept "full", and a delegated mandate must never
+    # trade on a blanket authorisation even if an arm file were hand-edited to one.
     if plan.get("will_execute_live"):
         arm_mode = str((plan.get("fuses") or {}).get("arm_mode") or "")
-        if arm_mode != ARM_MODE_ENTRY_FLB:
+        if arm_mode != ARM_MODE_ENTRY_ALLOWLISTED:
             plan["will_execute_live"] = False
             plan["mode"] = "DRY_RUN_PLAN"
             plan["guardian_entry_refusal"] = (
-                f"arm mode {arm_mode!r} is not {ARM_MODE_ENTRY_FLB!r}; entry forced to dry_run")
+                f"arm mode {arm_mode!r} is not {ARM_MODE_ENTRY_ALLOWLISTED!r}; entry forced to dry_run")
     # Carry the exact planned intent through to signing. Rebuilding it at execute
     # time risks signing something subtly different from what the fuses approved.
     # Leading underscore = not part of the serialisable plan record.
@@ -522,10 +520,10 @@ def execute_exit_plan(
     *,
     master_key: bytes | None = None,
 ) -> dict[str, Any]:
-    """LIVE exit: only reached when a plan is live-cleared. Decrypts the tenant's
-    secrets in-memory, builds an EOA SecureClient, executes through S1, records to
-    the tenant ledger. Fails closed (returns a dry-run-equivalent record) on any
-    missing secret / SDK unavailability."""
+    """LIVE exit: only reached when a plan is live-cleared. Decrypts the mandate's
+    agent credentials in memory, builds the exit agent's client, executes through
+    the order module and records to the mandate ledger. Any refusal to build the
+    client raises before an order exists."""
     pmx = _pmx()
     if not intent_plan.get("will_execute_live"):
         return {**intent_plan, "executed": False, "reason": "not live-cleared; dry_run"}
@@ -567,13 +565,15 @@ def execute_entry_plan(
     master_key: bytes | None = None,
 ) -> dict[str, Any]:
     """LIVE entry: only reached when a plan is live-cleared. Mirrors
-    `execute_exit_plan` — same secret handling, same S1 execution, same leak guard.
+    `execute_exit_plan` -- same secret handling, same order-module execution, same
+    leak guard -- and additionally requires the risk-budget reservation made at
+    planning time.
 
     The plan carries the exact intent it gated, so the signed order is the one the
     fuses approved; rebuilding it here would risk signing something subtly
     different from what was checked. Re-verifies the entry gate immediately before
     signing: a plan can be built and then the fleet gate pulled, and the last
-    check before committing a hosted user's money should be the current one."""
+    check before committing a mandate's money should be the current one."""
     pmx = _pmx()
     if not intent_plan.get("will_execute_live"):
         return {**intent_plan, "executed": False, "reason": "not live-cleared; dry_run"}
@@ -585,23 +585,19 @@ def execute_entry_plan(
     if intent is None:
         return {**intent_plan, "executed": False,
                 "reason": "no planned intent object to sign; refusing to rebuild"}
+    from marketflow.guardian import risk_budget as grisk
+
     tdir = gstore.tenant_dir(tenant_id)
     secrets = gwallet.decrypt_secrets(tdir, master_key=master_key)
-    from marketflow.guardian import turnkey as gturnkey
-
-    user_root = gturnkey.tenant_is_user_root(secrets)
     guardian = intent_plan.get("guardian") or {}
     reservation_id = str(guardian.get("risk_reservation_id") or "")
     market_id = str(guardian.get("market_id") or "")
     notional = float(guardian.get("estimated_notional_usd") or 0.0)
-    if user_root:
-        from marketflow.guardian import risk_budget as grisk
-
-        if not reservation_id:
-            raise grisk.RiskBudgetError("user-root BUY has no active risk reservation")
-        grisk.validate_reservation(
-            tenant_id, reservation_id, market_id=market_id, notional_usd=notional,
-        )
+    if not reservation_id:
+        raise grisk.RiskBudgetError("BUY has no active risk reservation")
+    grisk.validate_reservation(
+        tenant_id, reservation_id, market_id=market_id, notional_usd=notional,
+    )
     try:
         client = _with_hard_timeout(
             CLIENT_BUILD_TIMEOUT_SEC, "guardian live SecureClient build",
@@ -614,10 +610,9 @@ def execute_entry_plan(
             ),
         )
     except Exception:
-        if user_root and reservation_id:
-            grisk.release_entry(
-                tenant_id, reservation_id, reason="refused_before_client_ready",
-            )
+        grisk.release_entry(
+            tenant_id, reservation_id, reason="refused_before_client_ready",
+        )
         raise
     try:
         record = pmx.execute_order(
@@ -631,17 +626,16 @@ def execute_entry_plan(
             client.close()
         except Exception:
             pass
-    if user_root and reservation_id:
-        if record.get("executed") is True:
-            # An accepted resting maker order consumes the budget even before it
-            # fills; otherwise a loop could stack many live orders under one cap.
-            grisk.commit_entry(
-                tenant_id, reservation_id, filled_notional_usd=notional,
-            )
-        else:
-            grisk.release_entry(
-                tenant_id, reservation_id, reason="venue_rejected_order",
-            )
+    if record.get("executed") is True:
+        # An accepted resting maker order consumes the budget even before it
+        # fills; otherwise a loop could stack many live orders under one cap.
+        grisk.commit_entry(
+            tenant_id, reservation_id, filled_notional_usd=notional,
+        )
+    else:
+        grisk.release_entry(
+            tenant_id, reservation_id, reason="venue_rejected_order",
+        )
     leaks = pmx.assert_no_secret_leak(record, secrets)
     if leaks:
         pmx.engage_global_halt("guardian secret leak guard tripped after live entry")

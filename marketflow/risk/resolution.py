@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Independent Polymarket resolution-cleanliness verifier (daemon-owned).
 
-The autotrade daemon's entry fuse refuses any BUY whose market is not
-`resolution_confirmed_clean` (polymarket_market_gate.RESOLUTION_NOT_CONFIRMED_CLEAN
-+ polymarket_autotrade_daemon.resolution_attestation_for_entry). The belief organ
-(and any LLM-driven proposer) deliberately NEVER self-attests clean resolution —
-it ships intents with `resolution_confirmed_clean=False`. So the fuse fails closed
-and a fully armed daemon would simply idle: safe, but it can never trade.
+The execution daemon's entry fuse refuses any BUY whose market is not
+`resolution_confirmed_clean` (market_gate.RESOLUTION_NOT_CONFIRMED_CLEAN + the
+daemon's resolution_attestation_for_entry). A model signal source never
+self-attests clean resolution -- it ships intents with
+`resolution_confirmed_clean=False` -- so the fuse fails closed and a fully armed
+daemon would simply idle: safe, but it can never trade.
 
 This module is the missing TRUSTWORTHY INPUT to that fuse — it is NOT a bypass.
-The daemon, independently of the proposer, pulls the market's authoritative
+The daemon, independently of the signal source, pulls the market's authoritative
 on-chain resolution metadata from Polymarket Gamma and decides whether the
 resolution mechanics are objectively clean enough to back with real money. A
 clean verdict becomes an INDEPENDENT attestation (resolution_attestation_source),
@@ -19,7 +19,7 @@ markets that pass strict, objective, fail-closed checks.
 
 Cleanliness model (ALL must hold for clean=True; any miss => not clean):
   1. binary two-outcome market with two CLOB token ids (Yes/No OR a head-to-head
-     pair like ["K27","Walczaki"] — the belief organ buys outcome[0] as the YES side);
+     pair like ["Team A","Team B"], where outcome[0] is taken as the YES side);
   2. objective resolution domain (v1 whitelist = sports + esports, where the
      outcome is settled off an official scoreline / tournament result), and NOT a
      subjective question (tweet counts, "X out by <date>", geopolitical deals, …);
@@ -32,16 +32,15 @@ Cleanliness model (ALL must hold for clean=True; any miss => not clean):
 
 Hard boundaries (never crossed here):
   - read-only public Gamma metadata only; no SDK, no secrets, no orders, no
-    arm-state, no kernel/state.mx;
+    arm-state;
   - this NEVER weakens the capital fuses (caps / kill / arm-state) or the band /
     longshot / edge gates; it only supplies an independent resolution attestation;
   - fail closed: any fetch error, missing field, or unrecognised shape => not clean.
 
 v1 scope is deliberately narrow (sports + esports objective settlement) because
-that is where Polymarket resolution is genuinely uncontested and where the belief
-organ's L3 forward batch lives (FIFA World Cup match markets + CS2/Dota/Valorant
-matches). Other domains (price thresholds, politics, geopolitics) fail closed by
-design; extend the whitelist only with evidence, never by loosening the checks.
+that is where Polymarket resolution is genuinely uncontested. Other domains (price
+thresholds, politics, geopolitics) fail closed by design; extend the whitelist
+only with evidence, never by loosening the checks.
 """
 from __future__ import annotations
 
@@ -56,10 +55,10 @@ from typing import Any, Callable, Optional
 SCHEMA_VERSION = "polymarket-resolution-verifier-v0.1"
 ATTESTATION_SOURCE = "uma_objective_verifier_v1"
 
-# Standard Polymarket UMA optimistic-oracle adapters. Provenance: enumerated
-# 2026-06-23 as the `resolvedBy` of every top-volume active Polymarket market
-# sampled (these three cover >99% of them, including both adapters used by the
-# live FIFA World Cup and CS2 markets the belief organ selects). A market whose
+# Standard Polymarket UMA optimistic-oracle adapters, enumerated as the
+# `resolvedBy` of the top-volume active Polymarket markets sampled (these three
+# covered >99% of them, including the adapters used by live sports and esports
+# match markets). A market whose
 # resolver is NOT in this set fails closed (not clean) — extend only after
 # confirming a new adapter is a canonical Polymarket UMA adapter. Lowercased for
 # case-insensitive comparison.

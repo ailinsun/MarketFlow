@@ -13,8 +13,7 @@ Hard boundaries (fail-loud if violated):
     credential value; the wallet/funder address is masked in the ledger;
   - never call order placement / cancel / funds-movement endpoints; only the
     read methods in ALLOWED_SDK_READ_METHODS are ever invoked;
-  - the ledger holds only redacted account state and availability status;
-  - secrets are never wired into crypto paper.py, the live kernel, or state.mx.
+  - the ledger holds only redacted account state and availability status.
 
 Any live order action stays on a separate path:
   dry_run_preflight_gate -> live_ack_gate -> live_execution_ledger_gate.
@@ -78,9 +77,6 @@ READ_ONLY_BOUNDARIES = [
     "wallet_address_masked_in_ledger",
     "scoped_polymarket_sdk_http_proxy",
     "no_seed_phrase",
-    "no_crypto_paper_py",
-    "no_live_kernel",
-    "no_state_mx",
 ]
 
 # Only these SecureClient methods are ever invoked. Everything that places,
@@ -578,8 +574,7 @@ def human_summary(snapshot: dict[str, Any]) -> str:
             "## Boundary",
             "",
             "Private authenticated READ only. No order placement/cancel, no funds movement, "
-            "no secret printing, no full credential in ledger, "
-            "no crypto paper.py / live kernel / state.mx.",
+            "no secret printing, no full credential in ledger.",
             "",
         ]
     )

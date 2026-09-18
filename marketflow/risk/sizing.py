@@ -2,9 +2,8 @@
 
 This is the single sizing brain that replaces the asymmetric entry/exit split
 (entry_should_buy = one-shot fractional-Kelly maker open; decide_position = full
-SELL on adverse / Kelly TRIM only on a favourable new high). Per the 2026-06-26
-an external research blueprint,
-every tick we ask ONE question:
+SELL on adverse / Kelly TRIM only on a favourable new high). Every tick asks ONE
+question:
 
     given the most conservative current probability p and the current executable
     bid/ask, how much YES (or NO) should we hold right now?
@@ -19,11 +18,11 @@ the binary-option view opens: convexity from the price PATH itself (gamma /
 pre-resolution swing harvesting, structural mispricing, dynamic delta hedging),
 which can be an alpha source on its own. "Not losing" is dynamic asymmetric leverage
 (lever up when favourable, down/out when adverse), NOT static abstention. The
-convexity layer is the planned upgrade, Wolfram-native (stochastic optimal
+convexity layer is a possible extension (stochastic optimal
 control / ItoProcess); see docs feedback_not_losing_is_dynamic_convexity.
 
 It is a pure-function library: no I/O, no network, no order placement. The
-daemon calls it; S1 fuses (arm-state, caps, FOK, budget, kill, geoblock) remain
+daemon calls it; the order module fuses (arm-state, caps, FOK, budget, kill, geoblock) remain
 the only thing that can move real money and are unchanged.
 """
 
@@ -54,12 +53,12 @@ def _sigmoid(x: float) -> float:
 
 
 def calibrate_p_eff(p_raw: Optional[float], q_mid: Optional[float], lam: float) -> Optional[float]:
-    """Residual calibration: shrink the panel probability toward the market in
+    """Residual calibration: shrink the model probability toward the market in
     log-odds space.  logit(p_eff) = logit(q) + lam * (logit(p_raw) - logit(q)).
 
-    lam in [0, 1] is how much of the panel's deviation-from-market we trust. With
+    lam in [0, 1] is how much of the model's deviation-from-market we trust. With
     no proven edge lam should be small (p_eff ~ market => no bet). lam can later be
-    LEARNED per market-type from forward incremental log-score (blueprint #2); a
+    LEARNED per market-type from forward incremental log-score; a
     type that never beats the market gets lam -> 0.
     """
     if p_raw is None:
@@ -74,10 +73,10 @@ def calibrate_p_eff(p_raw: Optional[float], q_mid: Optional[float], lam: float) 
 def prob_uncertainty(divergence: Optional[float], credibility: Optional[float],
                      *, base_sd: float = 0.03, div_scale: float = 0.12,
                      thin_scale: float = 0.10) -> float:
-    """Map MarketFlow belief-panel signals to a probability std sigma_p used for the
+    """Map an estimate's source disagreement and evidence credibility to a probability std sigma_p used for the
     conservative quantile p_c = p - z*sigma_p.
 
-    Higher panel divergence (disagreement) and lower evidence credibility both
+    Higher divergence (disagreement between sources) and lower evidence credibility both
     widen sigma_p, so thin/contested signals are sized down automatically.
     """
     div = 0.0 if divergence is None else _clip(divergence, 0.0, 1.0)
@@ -88,7 +87,7 @@ def prob_uncertainty(divergence: Optional[float], credibility: Optional[float],
 def taker_fee_per_share(price: float, rate: float) -> float:
     """Verified Polymarket taker fee per share: rate*p*(1-p) (help.polymarket.com/
     trading-fees). Makers (post-only limit) pay 0. Peaks at p=0.5, vanishes at the
-    extremes. rate=0.05 for sports markets since the 2026-07-10 fee change (was 0.03)."""
+    extremes. `rate` is the market's own feeSchedule.rate, read per market."""
     p = _clip(float(price), 0.0, 1.0)
     return float(rate) * p * (1.0 - p)
 
@@ -117,13 +116,13 @@ class SizerConfig:
     min_trade_usd: float = 1.0            # deadband: ignore rebalances smaller than this
     exchange_min_notional_usd: float = 5.0  # Polymarket hard minimum order notional
     cost_buffer_sell: float = 0.01        # cost margin on the exit side
-    residual_lambda: float = 0.5          # trust in panel deviation-from-market (calibrate later)
+    residual_lambda: float = 0.5          # trust in the model's deviation from market (calibrate before use)
 
 
 @dataclass
 class SizerInputs:
     # Probability view
-    p_yes_mean: Optional[float]           # MarketFlow calibrated YES probability (e.g. belief p_a_effective)
+    p_yes_mean: Optional[float]           # calibrated YES probability from the signal source
     p_sd: float                           # uncertainty on that probability (see prob_uncertainty)
     q_mid: Optional[float] = None         # market mid (YES) for residual calibration; None => skip
     # Live executable book (NEVER the displayed/last price)
@@ -132,17 +131,19 @@ class SizerInputs:
     no_bid: Optional[float] = None
     no_ask: Optional[float] = None
     # Execution cost (verified Polymarket mechanic: taker fee = rate*p*(1-p), maker = 0)
-    fee_rate: float = 0.0                 # per-market feeSchedule.rate (0.05 sports since 2026-07-10), 0 if feesEnabled false
+    fee_rate: float = 0.0                 # per-market feeSchedule.rate; 0 if feesEnabled is false
     maker_entry: bool = True              # daemon opens post-only (maker, 0 fee); taker only in in-play window
     # Account
-    bankroll_usd: float = 25.0            # conservative net worth (cash + positions at bid)
+    bankroll_usd: float = 0.0             # net worth (cash + positions at bid). Unset
+    #                                       means zero, which sizes nothing: a sizer that
+    #                                       invents a bankroll would invent a position.
     held_side: Optional[str] = None       # "YES" | "NO" | None
     held_shares: float = 0.0
     # Gates (hard, side-independent)
     resolution_clean: bool = True
     market_quality_ok: bool = True
     force_exit: bool = False              # portfolio drawdown / cluster breach -> liquidate
-    meta_label_ok: bool = True            # blueprint #3 filter; default allow until trained
+    meta_label_ok: bool = True            # meta-label filter; default allow until trained
 
 
 @dataclass
@@ -222,7 +223,7 @@ def compute_target_position(inp: SizerInputs, cfg: Optional[SizerConfig] = None)
             reason=forced, diagnostics={"gate": "force_full_exit"},
         )
 
-    # 2) Meta-label veto (blueprint #3): allowed to BLOCK new risk, never to force a hold of a loser.
+    # 2) Meta-label veto: allowed to BLOCK new risk, never to force a hold of a loser.
     meta_block_new = not inp.meta_label_ok
 
     # 3) Target fraction for each side (only one side can be +EV given ask_yes+ask_no ~ 1).
@@ -338,11 +339,22 @@ def selftest() -> dict:
                                             bankroll_usd=100.0), cfg)
     checks["flat_no_edge_skips"] = d.action == "SKIP"
 
-    # Flat, tiny bankroll so Kelly target < $5 -> SKIP, not floor-up (overbet fix).
+    # A bankroll so small that the Kelly target falls under the venue's minimum order
+    # must SKIP rather than be floored up to the minimum, which would overbet. The
+    # bankroll is expressed against the venue minimum so the case survives any
+    # change to that minimum.
     d = compute_target_position(SizerInputs(p_yes_mean=0.62, p_sd=0.0, q_mid=0.50,
                                             yes_bid=0.49, yes_ask=0.50, no_bid=0.49, no_ask=0.50,
-                                            bankroll_usd=25.0), cfg)
+                                            bankroll_usd=cfg.exchange_min_notional_usd * 4),
+                                cfg)
     checks["below_min_skips_not_floors"] = d.action == "SKIP" and "overbet" in d.reason
+
+    # An unset bankroll sizes nothing. Defaulting to a made-up balance would turn a
+    # configuration mistake into a position.
+    d = compute_target_position(SizerInputs(p_yes_mean=0.80, p_sd=0.0, q_mid=0.50,
+                                            yes_bid=0.49, yes_ask=0.50, no_bid=0.49, no_ask=0.50),
+                                cfg)
+    checks["unset_bankroll_sizes_nothing"] = d.action == "SKIP" and d.trade_shares == 0
 
     # Held YES, edge IMPROVES (p up) -> scale in (BUY_MORE).
     held = SizerInputs(p_yes_mean=0.80, p_sd=0.0, q_mid=0.55, yes_bid=0.55, yes_ask=0.56,
@@ -398,6 +410,10 @@ def selftest() -> dict:
 if __name__ == "__main__":
     import json
     import sys
+    if "--selftest" not in sys.argv[1:]:
+        # The only mode this module has: it computes, it never trades. Refuse an
+        # unexpected argument rather than silently ignoring it.
+        raise SystemExit("usage: python3 -m marketflow.risk.sizing --selftest")
     r = selftest()
     print(json.dumps(r, ensure_ascii=False, indent=2))
     sys.exit(0 if r["ok"] else 1)

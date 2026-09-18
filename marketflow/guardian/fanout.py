@@ -1,17 +1,17 @@
 """Guardian fleet-level entry guards.
 
-Three risks exist only because entry is fanned out across many hosted tenants;
-none of them appear on a single account, and none are caught by per-tenant caps:
+Three risks exist only because entry is fanned out across many mandates; none
+of them appear on a single account, and none are caught by per-mandate caps:
 
-  1. **Self-inflicted slippage** — N tenants hitting the same thin book in the
-     same tick trade against each other. FLB's markets are thin (a 34-retry
-     no-fill run is on record, ), so an unbounded fleet order is the fleet
+  1. **Self-inflicted slippage** — N mandates hitting the same thin book in the
+     same tick trade against each other. Thin markets cannot absorb that: an order
+     can retry for many ticks without a fill, so an unbounded fleet order is the fleet
      paying its own impact.
-  2. **Order-of-service bias** — with a fixed tenant order the same accounts
+  2. **Order-of-service bias** — with a fixed service order the same accounts
      always get the better fill. Over many ticks that is a systematic transfer
-     between customers, which is not acceptable in a hosted product.
-  3. **Correlated drawdown** — every tenant can sit inside their own caps while
-     the whole fleet loses together on one bad day. Per-tenant fuses cannot see
+     between mandates, which a multi-mandate service must not have.
+  3. **Correlated drawdown** — every mandate can sit inside its own caps while
+     the whole fleet loses together on one bad day. Per-mandate fuses cannot see
      this; only a fleet-level view can.
 
 Everything here can only ever REFUSE or SHRINK a trade. No function in this

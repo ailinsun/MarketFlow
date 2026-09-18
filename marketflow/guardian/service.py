@@ -1,26 +1,28 @@
-"""Guardian resident service: automation over hosted tenants.
+"""Guardian resident service: automation over delegated mandates.
 
-Each tick, for every ready/paused guardian tenant:
-  1. read its funder wallet's PUBLIC positions (zero-credential data-api, same
-     source the alert tier uses),
-  2. run the shared multitenant brain (`evaluate_position`: user stop/take +
-     graduated de-risk + settlement guard),
+Each tick, for every `ready` mandate:
+  1. read its wallet's PUBLIC positions (zero-credential data API),
+  2. run the shared position rules (`evaluate_position`: the holder's stop/take
+     + graduated de-risk + settlement guard),
   3. for a SELL-side decision, plan an EXIT through the guardian executor
-     (welded caps + guardian arm + EOA wallet); execute only if live-cleared,
-  4. for tenants armed `entry_flb`, plan ENTRIES from allow-listed signals under
-     the fleet fan-out guards,
-  5. record decisions/alerts to the tenant namespace and audit trail.
+     (bound caps + guardian arm + user-root authority); execute only if
+     live-cleared,
+  4. for mandates armed `entry_allowlisted`, plan ENTRIES from allow-listed
+     signals under the fleet fan-out guards,
+  5. record decisions to the mandate's namespace and the audit trail.
 
-Entry is bounded by four independent things, any one of which stops it: the
-fleet gate `GUARDIAN_ENTRY_ENABLED`, the tenant's own arm mode, the tenant's caps
-and risk profile, and the fleet guards in `fanout.py`. Exits are never gated by
-the entry side — during any incident the safe direction stays open.
+Entry is bounded by independent checks, any one of which stops it: the fleet gate
+`GUARDIAN_ENTRY_ENABLED`, the mandate's arm mode, its caps and risk profile, its
+risk budget (`risk_budget.py`), a fresh user-root authority proof, and the fleet
+guards in `fanout.py`. Exits are never gated by the entry side -- during any
+incident the safe direction stays open.
 
-Withdrawal remains human-approved (store.request_withdrawal); this layer never
-moves funds between accounts.
+There is no withdrawal or transfer path here: funds leave a mandate's wallet only
+through the account holder's own root.
 
-Isolation: one tenant's failure is caught and written to its own record; it never
-stops another tenant. the owner's own live stack is never read or written here.
+Isolation: one mandate's failure is caught and written to its own record; it
+never stops another mandate. The operator's own account is never read or written
+here.
 """
 
 from __future__ import annotations
@@ -41,60 +43,19 @@ from marketflow.guardian import executor as gexec  # noqa: E402
 from marketflow.guardian import fanout as gfan  # noqa: E402  (fleet-level entry guards; can only refuse/shrink)
 from marketflow.guardian import traps as gtraps  # noqa: E402  (structural-trap rules; refuse + advise only)
 
-# The multitenant brain + public data plane are reused wholesale (decision logic,
-# settlement guard, position mapping). Guardian only adds the hosted-exec wiring.
+# The shared position rules + public data plane are reused wholesale (decision
+# logic, settlement guard, position mapping). Guardian only adds the
+# delegated-execution wiring.
 from marketflow.execution import multitenant as mt  # noqa: E402
 from marketflow.execution import orders as pmx  # noqa: E402
 
-# Entitlement provider (who is allowed to OPEN new positions) is deliberately not
-# shipped: billing, plans and invoicing are the deployment's own business logic.
-# Point MARKETFLOW_ENTITLEMENT_MODULE at an importable module exposing
-#     allows_entry(chat_id: str) -> bool
-# With nothing configured the gate stays CLOSED for entry (exits are unaffected).
-def _entitlement_module():
-    name = os.environ.get("MARKETFLOW_ENTITLEMENT_MODULE", "").strip()
-    if not name:
-        return None
-    try:
-        import importlib
-        return importlib.import_module(name)
-    except Exception:
-        return None
-
-ACTIVE_STATUSES = ("ready", "funded")  # paused tenants are skipped for actions
-
-
-def subscription_ok(chat_id: str) -> bool:
-    """Whether this tenant may open NEW positions.
-
-    Entitlement uncertainty fails closed for BUY only. This function is called
-    only from the entry path; exits are planned and executed before it and
-    therefore remain available through an entitlement-provider outage or a
-    past-due state. With no provider configured, entry is refused for everyone —
-    that is the safe default, not a bug.
-    """
-    mod = _entitlement_module()
-    if mod is None:
-        return False
-    try:
-        return bool(mod.allows_entry(chat_id))
-    except Exception:
-        return False
-
-
-def current_plan(chat_id: str) -> str | None:
-    """Best-effort plan lookup for per-tenant ceilings (Prime). None on failure."""
-    if _billing_mod is None:
-        return None
-    try:
-        return _billing_mod.plan_of(chat_id)
-    except Exception:
-        return None
+ACTIVE_STATUSES = ("ready",)  # paused mandates are skipped for actions
 
 
 def _tenant_config(entry: dict[str, Any]) -> mt.TenantConfig:
-    """Map a guardian registry entry onto a multitenant TenantConfig so the shared
-    brain can decide. Rules come from the tenant's saved prefs; caps stay welded."""
+    """Map a guardian registry entry onto a TenantConfig so the shared position
+    rules can decide. Rules come from the mandate's saved settings; caps stay
+    bound."""
     rules = entry.get("rules") if isinstance(entry.get("rules"), dict) else {}
     return mt.TenantConfig(
         tenant_id=entry["tenant_id"],
@@ -107,16 +68,17 @@ def _tenant_config(entry: dict[str, Any]) -> mt.TenantConfig:
     )
 
 
-ENTRY_SIGNAL_QUEUE = runtime_path("guardian", "polymarket_agent_intents.jsonl")
+# Written by the deployment's signal emitter; guardian only ever reads it.
+ENTRY_SIGNAL_QUEUE = runtime_path("guardian", "entry_signals.jsonl")
 
 
 def read_entry_signals(*, queue_path: str = ENTRY_SIGNAL_QUEUE, max_age_sec: float = 1800.0,
                        now_ts: float | None = None) -> list[dict[str, Any]]:
-    """Allow-listed, unexpired entry signals from the shared emitter queue.
+    """Allow-listed, unexpired entry signals from the emitter's queue.
 
-    Read-only: guardian consumes the same signals the owner stack emits, and never
-    writes to this queue. Stale signals are dropped here rather than downstream —
-    a signal older than its TTL describes a market that has moved on."""
+    Read-only: guardian never writes to this queue. Stale signals are dropped here
+    rather than downstream -- a signal older than its TTL describes a market that
+    has moved on."""
     now = float(now_ts if now_ts is not None else time.time())
     out: list[dict[str, Any]] = []
     try:
@@ -146,7 +108,7 @@ def read_entry_signals(*, queue_path: str = ENTRY_SIGNAL_QUEUE, max_age_sec: flo
 
 
 def _opened_today(tid: str, *, now_ts: float | None = None) -> int:
-    """Positions this tenant opened today (UTC), from its own execution ledger."""
+    """Positions this mandate opened today (UTC), from its own execution ledger."""
     day = datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()),
                                  tz=timezone.utc).strftime("%Y-%m-%d")
     n = 0
@@ -168,7 +130,7 @@ def _opened_today(tid: str, *, now_ts: float | None = None) -> int:
 
 def run_entries(entry: dict[str, Any], *, signals: list[dict[str, Any]],
                 budget: Any, fleet_halt: dict[str, Any]) -> list[dict[str, Any]]:
-    """Plan (and if live-cleared, execute) entries for one tenant.
+    """Plan (and if live-cleared, execute) entries for one mandate.
 
     Returns one row per signal considered, so a tick is auditable: why a tenant
     did nothing is as important as what it did."""
@@ -178,8 +140,6 @@ def run_entries(entry: dict[str, Any], *, signals: list[dict[str, Any]],
         return [{"skipped": "fleet_entry_halted", "detail": fleet_halt.get("reason")}]
     if not gstore.entry_enabled():
         return [{"skipped": "entry_gate_closed"}]
-    if not subscription_ok(str(entry.get("chat_id"))):
-        return [{"skipped": "subscription_lapsed"}]
     caps = gexec.tenant_caps(entry)
     available = gexec.tenant_collateral_usd(entry.get("funder_address"))
     opened = _opened_today(tid)
@@ -212,28 +172,27 @@ def run_entries(entry: dict[str, Any], *, signals: list[dict[str, Any]],
             "ask_price_source": g.get("ask_price_source"),
         }
         if plan.get("will_execute_live"):
-            if entry.get("authority_mode") == "turnkey_user_root":
-                from marketflow.guardian import risk_budget as grisk
+            from marketflow.guardian import risk_budget as grisk
 
-                try:
-                    reservation = grisk.reserve_entry(
-                        tid,
-                        idempotency_key=str(plan.get("idempotency_key") or ""),
-                        market_id=market_id,
-                        notional_usd=notional,
-                        limits=grisk.limits_for_entry(entry),
-                    )
-                except grisk.RiskBudgetError as exc:
-                    row["executed"] = False
-                    row["skipped"] = "risk_budget_refused"
-                    row["detail"] = str(exc)
-                    rows.append(row)
-                    gstore.audit(
-                        "entry_risk_budget_refused", tenant_id=tid,
-                        market_id=market_id, reason=str(exc),
-                    )
-                    continue
-                plan.setdefault("guardian", {})["risk_reservation_id"] = reservation["reservation_id"]
+            try:
+                reservation = grisk.reserve_entry(
+                    tid,
+                    idempotency_key=str(plan.get("idempotency_key") or ""),
+                    market_id=market_id,
+                    notional_usd=notional,
+                    limits=grisk.limits_for_entry(entry),
+                )
+            except grisk.RiskBudgetError as exc:
+                row["executed"] = False
+                row["skipped"] = "risk_budget_refused"
+                row["detail"] = str(exc)
+                rows.append(row)
+                gstore.audit(
+                    "entry_risk_budget_refused", tenant_id=tid,
+                    market_id=market_id, reason=str(exc),
+                )
+                continue
+            plan.setdefault("guardian", {})["risk_reservation_id"] = reservation["reservation_id"]
             record = gexec.execute_entry_plan(tid, plan)
             row["executed"] = bool(record.get("executed"))
             if row["executed"]:
@@ -287,7 +246,7 @@ def run_tenant(entry: dict[str, Any], *, signals: list[dict[str, Any]] | None = 
             }
             if plan.get("will_execute_live"):
                 # Only reached once GUARDIAN_LIVE_ENABLED + a valid guardian arm
-                # exist (owner-approved). Rebuild the exact intent the plan gated.
+                # exist. Rebuild the exact intent the plan gated.
                 intent = _rebuild_exit_intent(tid, decision, pos)
                 record = gexec.execute_exit_plan(tid, plan, intent)
                 exec_row["executed"] = bool(record.get("executed"))
@@ -335,23 +294,14 @@ def run_all(*, tick_seed: Any = None) -> dict[str, Any]:
     signals = read_entry_signals() if gstore.entry_enabled() else []
     fleet_halt = gfan.entry_halted(gfan.load_state())
     budget = gfan.TickBudget()
-    # Rotate who is served first each tick. With a fixed order the same tenants
-    # would always get the better fill on a thin book — a systematic transfer
-    # between customers, which a hosted product must not have.
+    # Rotate who is served first each tick. With a fixed order the same mandates
+    # would always get the better fill on a thin book -- a systematic transfer
+    # between mandates, which a multi-mandate service must not have.
     seed = tick_seed if tick_seed is not None else gstore.iso_now()
     order = gfan.tenant_order(sorted(active), tick_seed=seed)
     runs = []
     for tid in order:
-        entry = active[tid]
-        # refresh plan (Prime tier gets higher fat-finger ceilings in tenant_caps)
-        plan = current_plan(str(entry.get("chat_id")))
-        if plan is not None and plan != entry.get("plan"):
-            entry["plan"] = plan
-            gstore.upsert_tenant(entry)
-        if not subscription_ok(str(entry.get("chat_id"))):
-            gstore.audit("subscription_lapsed_skip_buy", tenant_id=tid)
-            # still run exits (protect open positions); run_entries refuses BUY.
-        runs.append(run_tenant(entry, signals=signals, budget=budget, fleet_halt=fleet_halt))
+        runs.append(run_tenant(active[tid], signals=signals, budget=budget, fleet_halt=fleet_halt))
     return {
         "generated_at": gstore.iso_now(),
         "tenant_count": len(runs),
@@ -381,8 +331,8 @@ def watch(interval_sec: float = 60.0, max_ticks: int | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Guardian hosted exit-only execution service.")
-    ap.add_argument("--run", action="store_true", help="one tick over all active tenants")
+    ap = argparse.ArgumentParser(description="Guardian delegated-mandate execution service.")
+    ap.add_argument("--run", action="store_true", help="one tick over all active mandates")
     ap.add_argument("--watch", action="store_true", help="resident loop")
     ap.add_argument("--once", action="store_true", help="one tick then exit")
     ap.add_argument("--interval", type=float, default=60.0)

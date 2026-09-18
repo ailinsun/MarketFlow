@@ -1,5 +1,5 @@
 {
-  "_comment": "Secondary path: limit BUY to open exposure. Hard-capped by S1 DEFAULT_MAX_PER_TRADE_USD and DEFAULT_MAX_TOTAL_DEPLOY_USD. Runs dry_run unless --live AND the unified arm-state is valid.",
+  "_comment": "Secondary path: limit BUY to open exposure. Hard-capped by the order module's DEFAULT_MAX_PER_TRADE_USD and DEFAULT_MAX_TOTAL_DEPLOY_USD. Runs dry_run unless requested live AND the arm state validates.",
   "action": "ENTER",
   "side": "BUY",
   "order_kind": "limit",

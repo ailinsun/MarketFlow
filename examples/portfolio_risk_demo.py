@@ -2,7 +2,7 @@
 """End-to-end demonstration: what is actually at risk, and what may be traded.
 
 Runs the real modules — nothing here is a mock — over a synthetic portfolio, in the
-order the live system runs them:
+order the execution path applies them:
 
     1. exposure     what is genuinely at risk, as opposed to what the book says
     2. budget       what a declared capital base permits
@@ -91,7 +91,7 @@ def step_budget(report):
           f"  = {money(orders.DEFAULT_MAX_PER_TRADE_USD)}")
     print(f"  default drawdown fuse      {orders.DEFAULT_DRAWDOWN_FRACTION * 100:5.2f}%"
           f"  = {money(orders.DEFAULT_MAX_DRAWDOWN_USD)}")
-    print(f"  owner ceiling, per trade   {orders.CEILING_PER_TRADE_FRACTION * 100:5.2f}%"
+    print(f"  operator ceiling, per trade{orders.CEILING_PER_TRADE_FRACTION * 100:5.2f}%"
           f"  = {money(orders.OWNER_CAP_CEILING_PER_TRADE_USD)}")
     print("\n  Not one of these is a dollar constant in the source. Set a different capital")
     print("  base and every gate moves with it; the ceilings stay ceilings because they are")
@@ -127,10 +127,13 @@ def step_gate():
     print("  edge is the sizer, which refuses it in the next step. Set edge_advisory=False")
     print("  to make it blocking here instead. Two components must not both silently own")
     print("  the same decision.")
-    print("\n  The band filter is not a preference. Fees are levied as rate * p * (1 - p),")
-    print("  so the cost of a round trip relative to the upside that remains explodes at")
-    print("  both ends of the probability range. instruments/fee_geometry.py is the")
-    print("  arithmetic, and it is recomputable in one command.")
+    print("\n  The band has two ends with different reasons. The low end is measured: in")
+    print("  the frozen ledger (data/zero_sum_ledger) takers buying below 10 cents lost")
+    print("  roughly half their notional before fees, which is the favourite-longshot")
+    print("  bias rather than the fee schedule. The high end is a risk-shape default:")
+    print("  above 0.85 the upside is at most 15 cents per dollar staked, so a small")
+    print("  probability error erases it. Fees themselves are rate * p * (1 - p) per")
+    print("  share, which is rate * (1 - p) per dollar deployed.")
 
 
 def step_sizing():
@@ -210,7 +213,7 @@ def main() -> int:
     step_sizing()
     step_structure()
     rule("Done")
-    print("  Nothing above was mocked: these are the modules the live system runs.")
+    print("  Nothing above was mocked: these are the same modules the execution path uses.")
     print("  Next:  make verify     every gate and self-test in the repository")
     print("         ARCHITECTURE.md how the layers fit together")
     print("         RISK_MODEL.md   what each number means and what it does not")

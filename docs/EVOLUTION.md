@@ -11,21 +11,26 @@ after.
 **The starting belief.** Prediction markets reward better forecasts. Build a
 forecasting engine, price the difference against the market, take the difference.
 
-**What the measurement said.** Across 439 settled markets and 1.34M taker BUY fills,
-the flow accounting closes with the venue taking +1.488% of buy notional while the
-buying crowd nets −1.345% and the counterparties −0.143%. The venue's take is an order
-of magnitude larger than what either side of the trade keeps. Whatever gross edge
-exists in aggregate is smaller than the friction by a wide margin.
+**What the measurement said.** In a selected sample of 439 settled markets and 1.34M
+taker BUY fills, the buying side showed **+0.143% aggregate gross selection edge**
+before fees. Modelled taker fees on the same notional were **1.488%**, about **10.4×**
+that gross edge, leaving the taker side at **−1.345%** net. Whatever aggregate
+selection edge the sample contains is smaller than the modelled friction by a wide
+margin.
 
 **What changed.** The target moved from the probability to the cost of expressing it.
-A forecasting engine that is right 2% more often than the market loses money in this
-setting; a system that pays 100 basis points less to take the same position does not.
-Everything downstream — fee geometry, the band gate, the markout instrument, the
-execution funnel — dates from that reframing.
+The reframing does not rest on the sample being universal; it rests on the fact that
+the friction a system controls is larger than the edge it is likely to find. Fee
+geometry, the band gate, the markout instrument and the execution funnel all date from
+that reframing.
 
-**What it does not mean.** Not that forecasting is worthless, and not that no edge
-exists. It means the binding constraint is elsewhere, so that is where the engineering
-went.
+**What it does not mean.** Not that forecasting is worthless or that no edge exists —
+this sample cannot show that, and the sample is selected. Not that the 1.488% is venue
+revenue: fees where a venue rebates part of them to makers are a transfer, and only the
+fee burden as computed from each market's own schedule is modelled here. What it means
+is narrower: *in this sample, a modest aggregate selection edge was overwhelmed by
+modelled execution friction*, so the engineering went where the constraint appeared to
+be.
 
 ## 2. A ranking key is a measurement decision
 

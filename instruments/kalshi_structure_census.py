@@ -62,7 +62,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2"
-TUNNEL_URL = os.environ.get("MARKETFLOW_POLYMARKET_PROXY_URL", "http://127.0.0.1:15237")
+# Optional egress proxy; unset means direct only.
+TUNNEL_URL = os.environ.get("MARKETFLOW_POLYMARKET_PROXY_URL", "").strip()
 USER_AGENT = "marketflow-kalshi-structure-census/0.1 (read-only research)"
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(REPO, "runtime", "trade", "analysis", "kalshi_market_structure_census")
@@ -73,16 +74,16 @@ COLLECTIONS_PATH = "multivariate_event_collections"
 
 
 def _openers() -> list[urllib.request.OpenerDirector]:
-    return [
-        urllib.request.build_opener(urllib.request.ProxyHandler({})),
-        urllib.request.build_opener(
-            urllib.request.ProxyHandler({"http": TUNNEL_URL, "https": TUNNEL_URL})),
-    ]
+    openers = [urllib.request.build_opener(urllib.request.ProxyHandler({}))]
+    if TUNNEL_URL:
+        openers.append(urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": TUNNEL_URL, "https": TUNNEL_URL})))
+    return openers
 
 
 def http_json(url: str, *, timeout: float = 30.0, retries: int = 2) -> Any:
-    """Try direct, then the tunnel. A 4xx returns None immediately: retrying will
-    not change it."""
+    """Try direct, then the configured proxy if any. A 4xx returns None
+    immediately: retrying will not change it."""
     last: Exception | None = None
     for attempt in range(retries):
         for opener in _openers():

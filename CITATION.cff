@@ -5,19 +5,21 @@ abstract: >-
   Measurements of prediction-market order flow — a zero-sum flow ledger over 439
   settled markets, event-contract fee geometry, repeated-size trading signatures and
   UMA settlement outcomes — together with the execution and risk-control system built
-  on their conclusion that friction, not prediction, is the binding constraint in
-  these markets. The system covers event-level exposure and correlation accounting,
-  capital-relative risk budgets and position sizing, market-quality and settlement
-  gates, an enclave-scoped non-custodial signing layer, and fail-loud monitoring.
-  Raw trading tapes and wallet identities are not distributed.
+  on what the ledger shows: in that sample a modest aggregate selection edge was
+  overwhelmed by modelled execution friction. The system covers event-level exposure
+  and correlation accounting, capital-relative risk budgets and position sizing,
+  market-quality and settlement gates, a delegated-mandate signing layer in which the
+  account holder's own root controls the account and the service holds only side-bound
+  agent credentials, and fail-loud monitoring. Raw trading tapes and wallet identities
+  are not distributed.
 type: software
 authors:
   # CFF 1.2.0 definitions.entity: an organisation or project, identified by `name`
   # alone. Provenance for the earlier release is carried by the DOI in
   # `identifiers` rather than by a personal name.
   - name: "MarketFlow contributors"
-version: 0.2.0
-date-released: 2026-09-17
+version: 0.2.1
+date-released: 2026-09-18
 license: Apache-2.0
 repository-code: "https://github.com/ailinsun/MarketFlow"
 # The concept DOI. It always resolves to the most recent archived version, so it is

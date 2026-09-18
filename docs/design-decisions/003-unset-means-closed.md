@@ -9,10 +9,11 @@ loosens.
 | Condition | Result |
 |---|---|
 | `MARKETFLOW_ENTRY_SOURCES` unset | no signal source may open a position |
-| entitlement module unset | nothing is entitled |
+| guardian gate file absent | no live order, no automated entry, no delegated mandate |
 | arm state unreadable | dry run |
-| fee rate unavailable | a *higher* assumed fee |
-| filter file missing | no filtering, with the source recorded in the output |
+| fee rate unavailable | estimated for a dry run; a live taker order is refused |
+| authority proof missing, stale or mismatched | refused, with no second signing backend |
+| risk-budget reservation absent | a live entry is refused before a client is built |
 | alert sink unconfigured | the alert is dropped and the call returns `False` |
 
 ## Why
@@ -21,8 +22,10 @@ The alternative is a system whose safety depends on someone having remembered to
 configure it. Defaults are load-bearing precisely because nobody reads them.
 
 The fee case shows the shape: an unknown fee assumed to be zero makes every trade look
-more profitable than it is, and a venue outage would then loosen the gate. A higher
-assumed fee can only reject trades that would otherwise have been marginal.
+more profitable than it is, and a venue outage would then loosen the gate. The system's
+answer goes further than a conservative guess — for a dry run it estimates the cost so
+the order can still be priced, and for a live taker order it refuses outright, because
+a guessed rate can understate the cost of the very order being placed.
 
 The alert case shows the limit of the rule: an alert sink that raised on failure would
 take down the thing it is watching. So it fails soft — but it reports `False` rather

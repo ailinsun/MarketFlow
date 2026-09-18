@@ -35,11 +35,11 @@ PREDICTIONS_PATH = os.path.join(OUT_DIR, "risk_shadow_predictions.jsonl")
 PUBLIC_LEDGER_SOURCE = os.path.join(OUT_DIR, "alert_ledger.jsonl")
 PUBLIC_LEDGER_PATH = os.path.join(OUT_DIR, "public_hit_ledger.json")
 CHANNEL_CONF_PATH = os.path.join(OUT_DIR, "settlement_channel.json")
-# Ledger activation = the first time build_public_ledger wrote to disk. The miss
-# side of the comparison (disputes_observed) is counted from that moment: disputes
-# before it were never inside the observation window, and counting them would
-# fabricate misses. Set this to your own deployment's activation time.
-LEDGER_ACTIVATED_AT = "2026-08-12T20:11:46Z"
+# Ledger activation = the first time build_public_ledger wrote to disk, recorded
+# in the ledger file itself and carried forward on every rebuild. The miss side of
+# the comparison (disputes_observed) is counted from that moment: disputes before
+# it were never inside the observation window, and counting them would fabricate
+# misses.
 
 SCHEMA = "marketflow-settlement-intelligence-v0.1"
 # UMA Optimistic Oracle v2 subgraph. The base URL is deployment-specific (a hosted
@@ -566,7 +566,7 @@ def publish_channel_anchor(text: str) -> str | None:
 
 def record_election_alert(*, market: dict[str, Any], alert: dict[str, Any],
                           uma: dict[str, Any] | None, emitted_at: str | None = None) -> None:
-    """Append a zero-PnL, zero-wallet capability record after successful delivery."""
+    """Append a zero-PnL, zero-wallet record for an emitted election-market alert."""
     if not is_election_market(market):
         return
     uma = uma if isinstance(uma, dict) else {}
@@ -580,7 +580,7 @@ def record_election_alert(*, market: dict[str, Any], alert: dict[str, Any],
     # The channel text says exactly what the ledger row says — title, phase, time,
     # no position and no PnL. The wording stays neutral on purpose: a public post
     # gets screenshotted, and a loaded verb travels further than the caveat.
-    rec["tg_link"] = publish_channel_anchor(
+    rec["anchor_link"] = publish_channel_anchor(
         f"Election market · UMA {uma.get('state_label') or 'activity'} · "
         f"{market.get('question') or market.get('slug') or rec['market_id']} · "
         f"alert logged {rec['emitted_at']}")
@@ -598,7 +598,7 @@ _PUBLIC_EVENT_FIELDS = ("schema", "emitted_at", "alert_rule", "phase", "topic",
                         "market_id", "slug", "title",
                         "request_key", "request_at", "proposal_expires_at", "condition_id",
                         "contains_pnl", "contains_holdings",
-                        "dispute_at", "dispute_tx", "lead_seconds", "hit_before_dispute", "tg_link")
+                        "dispute_at", "dispute_tx", "lead_seconds", "hit_before_dispute", "anchor_link")
 _PUBLIC_TOPIC = "politics — election market"
 
 
@@ -625,17 +625,39 @@ def _watching_counts() -> dict[str, Any] | None:
         return None
 
 
-def build_public_ledger() -> dict[str, Any]:
+def _activation_time(ledger_path: str, *, now: float | None = None) -> str:
+    """When this deployment's public ledger first wrote to disk.
+
+    Read back from the ledger file itself; only the very first build stamps the
+    current time. Nothing here is a constant, so no deployment inherits another
+    deployment's observation window.
+    """
+    try:
+        with open(ledger_path, encoding="utf-8") as fh:
+            prior = json.load(fh)
+        value = prior.get("activated_at") if isinstance(prior, dict) else None
+        if isinstance(value, str) and value:
+            return value
+    except (OSError, json.JSONDecodeError):
+        pass
+    return iso(time.time() if now is None else now) or ""
+
+
+def build_public_ledger(*, source_path: str = PUBLIC_LEDGER_SOURCE,
+                        history_path: str = HISTORY_PATH,
+                        ledger_path: str = PUBLIC_LEDGER_PATH,
+                        now: float | None = None) -> dict[str, Any]:
+    activated_at = _activation_time(ledger_path, now=now)
     events: list[dict[str, Any]] = []
     try:
-        with open(PUBLIC_LEDGER_SOURCE, encoding="utf-8") as fh:
+        with open(source_path, encoding="utf-8") as fh:
             events = [json.loads(line) for line in fh if line.strip()]
     except (OSError, json.JSONDecodeError):
         pass
     dispute_by_market: dict[str, dict[str, Any]] = {}
     election_disputes: list[dict[str, Any]] = []
     try:
-        with open(HISTORY_PATH, encoding="utf-8") as fh:
+        with open(history_path, encoding="utf-8") as fh:
             for line in fh:
                 m = json.loads(line); latest = (m.get("requests") or [{}])[-1]
                 dispute_by_market[str(m.get("market_id") or "")] = latest
@@ -645,7 +667,7 @@ def build_public_ledger() -> dict[str, Any]:
                 # measurement; recording a miss and publishing a zero are the same
                 # discipline.
                 disputed_at = ((latest.get("timeline") or {}).get("disputed_at"))
-                if (disputed_at and disputed_at >= LEDGER_ACTIVATED_AT
+                if (disputed_at and disputed_at >= activated_at
                         and is_election_market({"question": m.get("title") or "",
                                                 "description": latest.get("description") or ""})):
                     election_disputes.append({
@@ -672,8 +694,9 @@ def build_public_ledger() -> dict[str, Any]:
     observed = sorted(election_disputes, key=lambda d: d["disputed_at"], reverse=True)
     for d in observed:
         d["alerted"] = d["market_id"] in alerted_ids
-    doc = {"schema": SCHEMA, "generated_at": iso(time.time()), "ledger_scope": "system alerts only",
-           "activated_at": LEDGER_ACTIVATED_AT,
+    doc = {"schema": SCHEMA, "generated_at": iso(time.time() if now is None else now),
+           "ledger_scope": "system alerts only",
+           "activated_at": activated_at,
            "contains_pnl": False, "contains_holdings": False, "n": len(out), "events": out,
            "disputes_observed": observed,
            "disputes_covered": {"covered": sum(1 for d in observed if d["alerted"]),
@@ -684,7 +707,7 @@ def build_public_ledger() -> dict[str, Any]:
     watching = _watching_counts()
     if watching:
         doc["watching"] = watching
-    _atomic(PUBLIC_LEDGER_PATH, doc)
+    _atomic(ledger_path, doc)
     return doc
 
 
@@ -705,10 +728,30 @@ def selftest() -> dict[str, Any]:
     # down with it.
     checks["channel_fail_soft"] = publish_channel_anchor("selftest — not delivered") is None \
         if not _channel_conf().get("channel") else True
-    ledger = build_public_ledger()
-    checks["ledger_miss_side"] = (isinstance(ledger.get("disputes_observed"), list)
-                                  and isinstance(ledger.get("disputes_covered"), dict)
-                                  and ledger.get("activated_at") == LEDGER_ACTIVATED_AT)
+    # The ledger runs against a scratch directory: a self-test must never activate
+    # a deployment's real ledger. Activation is stamped on the first build and
+    # carried forward on every later one; a dispute before activation is outside
+    # the window, one after it is a counted miss.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "alert_ledger.jsonl")
+        hist = os.path.join(tmp, "uma_disputes.jsonl")
+        out = os.path.join(tmp, "public_hit_ledger.json")
+        t0 = 1_900_000_000
+        first = build_public_ledger(source_path=src, history_path=hist, ledger_path=out, now=t0)
+        with open(hist, "w", encoding="utf-8") as fh:
+            for mid, delta in (("before", -3600), ("after", 3600)):
+                fh.write(json.dumps({"market_id": mid, "title": "Will A win the election?",
+                                     "requests": [{"timeline": {"disputed_at": iso(t0 + delta)},
+                                                   "description": "official election results"}]}) + "\n")
+        second = build_public_ledger(source_path=src, history_path=hist, ledger_path=out,
+                                     now=t0 + 7200)
+    checks["ledger_activation_stamped_once"] = (
+        first.get("activated_at") == iso(t0) and second.get("activated_at") == iso(t0))
+    checks["ledger_miss_side"] = (
+        [d["market_id"] for d in second.get("disputes_observed") or []] == ["after"]
+        and second.get("disputes_covered") == {"covered": 0, "observed": 1})
+    ledger = second
     # The boundary, asserted rather than remembered: the public artefact never
     # carries money — no PnL, no holdings, no amounts, no positions. Titles and
     # identifiers are published in full.
@@ -726,9 +769,13 @@ def selftest() -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("action", choices=("backfill", "shadow", "evaluate", "public-ledger", "run", "selftest"))
+    ap.add_argument("action", nargs="?", default=None,
+                    choices=("backfill", "shadow", "evaluate", "public-ledger", "run", "selftest"))
+    ap.add_argument("--selftest", action="store_true", help="same as the selftest action")
     args = ap.parse_args(argv)
-    if args.action == "selftest": result = selftest()
+    if args.action is None and not args.selftest:
+        ap.error("an action is required")
+    if args.selftest or args.action == "selftest": result = selftest()
     elif args.action == "backfill": result = build_history()
     elif args.action == "shadow": result = run_shadow()
     elif args.action == "evaluate": result = evaluate_shadow()

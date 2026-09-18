@@ -35,19 +35,43 @@ import time
 from typing import Any
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-from marketflow.monitor import store as S  # noqa: E402
-from marketflow.paths import runtime_dir  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+from marketflow.paths import runtime_dir, runtime_path  # noqa: E402
+
+# This package's own bucket: the watchdog's de-duplication state lives here, apart
+# from every heartbeat it reads.
+OUT_DIR = runtime_path("monitor")
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _read_json(path: str, default: Any) -> Any:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def _atomic_write_json(path: str, data: Any) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2, sort_keys=True)
+    os.replace(tmp, path)
+
 
 # (label, path, max silence in seconds, plain-language description). A path under
-# EXEC_PREFIX resolves against the runtime tree — that bucket belongs to the
+# EXEC_PREFIX resolves against the runtime tree -- that bucket belongs to the
 # execution stack, possibly mirrored from another host. Everything else resolves
 # against OUT_DIR, this package's own bucket. Two buckets, two writers, never
-# mixed. state.json is rewritten every monitoring cycle, which is this service's
-# own heartbeat.
+# mixed. The chain is: the execution daemon writes a per-tick heartbeat, the
+# money-path watchdog watches it, and this module watches the money-path watchdog.
 EXEC_PREFIX = ("risk/", "execution/", "guardian/", "feeds/")
 TARGETS: list[tuple[str, str, int, str]] = [
-    ("alerts-service", "state.json", 180,
-     "alerting service main loop (writes state.json every cycle = its heartbeat)"),
     ("money-path-watchdog",
      "risk/money_path/latest.json",
      900,
@@ -58,12 +82,12 @@ TARGETS: list[tuple[str, str, int, str]] = [
 def _resolve(rel: str) -> str:
     """Mirrored heartbeats resolve against PROJECT_DIR; this package's own
     artefacts resolve against OUT_DIR."""
-    base = runtime_dir() if rel.startswith(EXEC_PREFIX) else S.OUT_DIR
+    base = runtime_dir() if rel.startswith(EXEC_PREFIX) else OUT_DIR
     return os.path.join(base, rel)
 
 
 def _state_path() -> str:
-    return os.path.join(S.OUT_DIR, "watchdog_state.json")
+    return os.path.join(OUT_DIR, "watchdog_state.json")
 
 
 def check_targets(*, now: float | None = None) -> list[dict[str, Any]]:
@@ -82,7 +106,7 @@ def check_targets(*, now: float | None = None) -> list[dict[str, Any]]:
 
 def run_once(*, dry: bool = False) -> dict[str, Any]:
     results = check_targets()
-    prev = S._read_json(_state_path(), {})
+    prev = _read_json(_state_path(), {})
     prev_stale = set(prev.get("stale_labels") or [])
     now_stale = {r["label"] for r in results if r["stale"]}
     newly_stale = now_stale - prev_stale
@@ -95,11 +119,9 @@ def run_once(*, dry: bool = False) -> dict[str, Any]:
             msgs.append(f"🔴 watchdog: {r['label']} heartbeat timed out "
                         f"({age}, threshold {r['max_age_sec']}s)\n"
                         f"This one covers: {r['human']}\n"
-                        + ("⚠️ Money path: if anything is open, exit evaluation may have "
-                           "stopped. Check the execution daemon and whatever writes this "
-                           "heartbeat."
-                           if r["label"] != "alerts-service"
-                           else "Check whether the alerting main loop is still running."))
+                        "⚠️ Money path: if anything is open, exit evaluation may have "
+                        "stopped. Check the execution daemon and whatever writes this "
+                        "heartbeat.")
     for label in recovered:
         msgs.append(f"🟢 watchdog: {label} heartbeat recovered")
 
@@ -113,8 +135,8 @@ def run_once(*, dry: bool = False) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - a failed send must not be recorded as sent
             return {"results": results, "notified": False, "messages": msgs}
     if not dry:
-        S._atomic_write_json(_state_path(), {"stale_labels": sorted(now_stale),
-                                             "checked_at": S.iso_now()})
+        _atomic_write_json(_state_path(), {"stale_labels": sorted(now_stale),
+                                           "checked_at": _iso_now()})
     return {"results": results, "notified": bool(msgs), "messages": msgs}
 
 
@@ -127,25 +149,24 @@ def selftest() -> int:
     # The point of the module: the money path must be in the table, or this is
     # back to watching only itself.
     checks["covers_money_path"] = "money-path-watchdog" in labels
-    checks["keeps_alerts_self"] = "alerts-service" in labels
-    checks["watches_more_than_itself"] = len(labels) >= 2
+    # Every target is another process's heartbeat; a table that watches only this
+    # module's own files would be watching itself.
+    checks["every_target_is_cross_process"] = bool(TARGETS) and all(
+        t[1].startswith(EXEC_PREFIX) for t in TARGETS)
 
     # The two buckets must not resolve to the same base. Mixing them means a
     # mirrored heartbeat is never actually read, and nothing reports an error.
     checks["cross_process_resolves_under_runtime"] = _resolve(
         "risk/money_path/latest.json") == os.path.join(
         runtime_dir(), "risk", "money_path", "latest.json")
-    checks["alerts_resolves_under_out_dir"] = _resolve("state.json") == os.path.join(
-        S.OUT_DIR, "state.json")
-    checks["two_buckets_differ"] = os.path.dirname(_resolve("state.json")) != os.path.dirname(
+    checks["own_state_resolves_under_out_dir"] = _resolve("watchdog_state.json") == os.path.join(
+        OUT_DIR, "watchdog_state.json")
+    checks["two_buckets_differ"] = os.path.dirname(_resolve("watchdog_state.json")) != os.path.dirname(
         _resolve("execution/x.json"))
 
     # Cross-process thresholds follow the writing period, not the watched
     # process's own tick: one missed write should not alert, two in a row should.
-    cross_process = {t[0]: t[2] for t in TARGETS if t[0] != "alerts-service"}
-    checks["cross_process_threshold_tolerates_two_misses"] = all(
-        v >= 900 for v in cross_process.values())
-    checks["alerts_threshold_unchanged"] = next(t[2] for t in TARGETS if t[0] == "alerts-service") == 180
+    checks["cross_process_threshold_tolerates_two_misses"] = all(t[2] >= 900 for t in TARGETS)
 
     # A missing file counts as stale. A heartbeat that never wrote successfully
     # must alert, not be silently read as "not configured".

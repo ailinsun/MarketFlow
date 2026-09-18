@@ -57,9 +57,10 @@ HISTORY_PATH = os.path.join(OUT_DIR, "history.jsonl")
 # than a missed one, but alerting at exactly the write period guarantees noise.
 TARGETS: list[tuple[str, str, int, str]] = [
     (
-        "canary-daemon",
-        runtime_path("execution", "canary_readiness",
-                     "marketflow_live_account_exit_first_daemon_latest.json"),
+        "execution-daemon",
+        # The daemon rewrites latest.json every tick. This path must equal the
+        # daemon's DEFAULT_LATEST_JSON; tests/test_runtime_layout.py asserts it.
+        runtime_path("execution", "daemon", "latest.json"),
         360,
         "the execution chain: exit evaluation, entry gating and HALT recovery all\n"
         "         happen inside this tick",
@@ -461,18 +462,26 @@ def selftest() -> int:
         except OSError:
             pass
 
-    # Zero shared code path: this module may not import anything it watches.
-    src = open(os.path.abspath(__file__), encoding="utf-8").read()
-    body = src.split('"""', 2)[-1]  # skip the module docstring, which names those files
+    # Zero shared code path: a watchdog that imports what it watches dies with it.
+    # Checked on the syntax tree, so it tracks the real import paths rather than a
+    # list of names that can go stale when modules move.
+    import ast as _ast
+    tree = _ast.parse(open(os.path.abspath(__file__), encoding="utf-8").read())
+    imported = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Import):
+            imported |= {a.name for a in node.names}
+        elif isinstance(node, _ast.ImportFrom) and node.module:
+            imported.add(node.module)
+            imported |= {f"{node.module}.{a.name}" for a in node.names}
     checks["no_import_of_monitored_code"] = not any(
-        f"import {m}" in body for m in
-        ("polymarket_execution", "polymarket_autotrade_daemon", "live_trading_control")
-    )
+        m == "marketflow.execution" or m.startswith("marketflow.execution.")
+        for m in imported)
 
     # the shape of the real target table: breaking it must be visible immediately
-    checks["real_target_is_canary_latest"] = (
-        len(saved) >= 1 and saved[0][0] == "canary-daemon"
-        and saved[0][1].endswith("marketflow_live_account_exit_first_daemon_latest.json")
+    checks["real_target_is_the_daemon_latest"] = (
+        len(saved) >= 1 and saved[0][0] == "execution-daemon"
+        and saved[0][1].endswith("execution/daemon/latest.json")
     )
     checks["real_threshold_is_six_slow_ticks"] = saved[0][2] == 360
     checks["debounce_at_least_two_rounds"] = STALE_CONFIRM_ROUNDS >= 2

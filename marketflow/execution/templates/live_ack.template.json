@@ -1,12 +1,12 @@
 {
-  "_comment": "Reference only: the live authorization control file is runtime/polymarket_arm_state.json and is written by bridge POST /api/polymarket/arm on the owner's frontend click. MarketFlow code must not self-write it. Omit max_* caps to use S1 code caps; include max_* only to tighten them.",
+  "_comment": "Reference only. The live authorization file names the writer and the acknowledgement phrase the order module expects, and it is written by the operator's own tooling — MarketFlow code never self-arms. Omit max_* caps to use the module's default fractions; include them only to tighten.",
   "schema_version": "polymarket-arm-state-v1",
   "armed": true,
   "mode": "exit_only",
   "live_ack": "OWNER_APPROVES_POLYMARKET_LIVE_EXECUTION",
-  "written_by": "bridge",
+  "written_by": "operator",
   "budget_epoch": "poly-YYYY-MM-DD",
   "budget_epoch_started_at": "YYYY-MM-DDT00:00:00Z",
   "expires_at": "2026-06-26T00:00:00Z",
-  "note": "reference shape only; live arming is via bridge/frontend, not by copying this file"
+  "note": "reference shape only; live arming is the operator's act, not the code's"
 }

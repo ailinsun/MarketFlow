@@ -12,11 +12,11 @@ make demo
 
 Python 3.9 or newer, nothing installed. `make verify` runs the publication gate and
 every self-test in the repository; `make demo` walks a synthetic portfolio through the
-real risk and execution modules.
+real risk and execution modules. (The optional signing install below needs 3.10+.)
 
-`make verify` prints one line per check and ends non-zero on any failure. Two lines
-will say `SKIP ... needs cryptography` — those are the signing-layer suites, which
-need the optional install below. Everything else runs on the standard library.
+`make verify` prints one line per check and ends non-zero on any failure. One line
+says `SKIP ... needs cryptography` — that is the guardian suite, which needs the
+optional install below. Everything else runs on the standard library.
 
 ## What `make verify` actually checks
 
@@ -27,7 +27,7 @@ need the optional install below. Everything else runs on the standard library.
 | instrument self-tests | the research tools reproduce their own known answers |
 | frozen aggregate verification | the published snapshots' accounting identities still close |
 | package self-tests | every module in `marketflow` passes its own invariants |
-| guardian suites | the authority, arm and ledger invariants (needs the signing install) |
+| guardian suite | authority proofs, arm state, risk budget and the enclave signing layer (needs the signing install) |
 | unit tests | rotation and risk-primitive regressions |
 | the demonstration | the end-to-end path runs and produces the documented numbers |
 

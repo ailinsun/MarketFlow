@@ -12,8 +12,7 @@ refuses. An unconfigured system does nothing rather than everything.
 |---|---|---|
 | `MARKETFLOW_RUNTIME` | `<project>/runtime` | Root of all mutable state: ledgers, arm state, caches, heartbeats. `marketflow.paths` is the only module that resolves it, so setting it moves every artefact at once. Set this for any installed deployment; the default writes beside the source. |
 | `MARKETFLOW_RISK_STATE_DIR` | a temporary directory | Where the read-only data plane keeps risk state. |
-| `MARKETFLOW_GUARDIAN_ROOT` | under the runtime root | Tenant registry, withdrawal queue, audit trail. |
-| `MARKETFLOW_GUARDIAN_SECRETS_DIR` | `~/.marketflow/secrets` | Every secret a deployment needs on disk: encrypted tenant material and the optional chat bot token. Never inside the repository. |
+| `MARKETFLOW_GUARDIAN_ROOT` | under the runtime root | Mandate registry, per-mandate directories, the authority proofs and the audit trail. This is also where the guardian gate files live (below). |
 
 ## Risk limits
 
@@ -22,7 +21,7 @@ bases, so a deployment changes its size by changing a base, not by editing code.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `MARKETFLOW_CAPITAL_BASE_USD` | `1000000` | Base for the owner execution path. Total deployment 20%, per trade 0.5%, drawdown fuse 2%; ceilings 100% / 5% / 10%. |
+| `MARKETFLOW_CAPITAL_BASE_USD` | `1000000` | Base for the operator execution path. Total deployment 20%, per trade 0.5%, drawdown fuse 2%; ceilings 100% / 5% / 10%. |
 | `MARKETFLOW_MANDATE_CAPITAL_USD` | `1000000` | Base for delegated mandates. `standard` allows 50% / 2% / 10%; `professional` 100% / 5% / 20%. |
 | `MARKETFLOW_FLEET_CAPITAL_USD` | `10000000` | Base for fleet-wide guards; the daily drawdown halt is 0.5% of it. |
 
@@ -38,16 +37,28 @@ assert scale invariance rather than dollar amounts.
 | `MARKETFLOW_MIN_ROOT_QUORUM` | `2` | Minimum signers on a root authority. Floored at 2 in code — a lower value is ignored, a higher one honoured. |
 | `MARKETFLOW_POLYMARKET_KILL` | a path under the runtime root | Touch the file to halt execution. Confirm the path before you need it. |
 | `MARKETFLOW_NIGHT_RULE_ENABLED` | `0` | An optional time-of-day trap rule, off by default. |
-| `MARKETFLOW_ALLOW_LEGACY_HOSTED_ONBOARDING` | empty | Legacy hosted-wallet onboarding stays disabled; the non-custodial path is the default. |
+
+### Gate files
+
+Some gates are files rather than variables, because their whole point is that they can
+be closed without editing anything or restarting with a new environment. All of them
+live under `MARKETFLOW_GUARDIAN_ROOT`; **absent means closed**, and nothing in the
+service creates one.
+
+| File | Open means |
+|---|---|
+| `GUARDIAN_LIVE_ENABLED` | this deployment may place live orders at all |
+| `GUARDIAN_ENTRY_ENABLED` | automated BUY is permitted fleet-wide (exits are never gated by it) |
+| `GUARDIAN_USER_ROOT_ENABLED` | user-root delegated mandates may be admitted |
+| `GUARDIAN_TURNKEY_ENABLED` | mandates may sign through the enclave |
 
 ## Pluggable seams
 
-Both load a dotted module path at runtime. **Unconfigured means deny.** A missing
-entitlement module does not mean "everyone is entitled".
+Loads a dotted module path at runtime. **Unconfigured means deny.** A missing module
+does not mean "everything is routed".
 
 | Variable | Contract |
 |---|---|
-| `MARKETFLOW_ENTITLEMENT_MODULE` | module exposing `allows_entry(chat_id) -> bool` |
 | `MARKETFLOW_INTEL_ROUTER` | module routing a market to its intelligence sources |
 
 ## Signing layer
@@ -56,11 +67,10 @@ Only read when placing real orders; see [SECURITY.md](../SECURITY.md).
 
 | Variable | Effect |
 |---|---|
-| `MARKETFLOW_GUARDIAN_MASTER_KEY` | Key material for encryption at rest. |
-| `MARKETFLOW_TURNKEY_CONFIG` | Enclave signing configuration. |
-| `MARKETFLOW_TURNKEY_API_BASE` | Enclave API endpoint. |
-| `MARKETFLOW_GUARDIAN_HTTP_HOST` / `_PORT` | Control API bind address; defaults to `127.0.0.1:8790`. Do not bind it publicly. |
-| `MARKETFLOW_GUARDIAN_HTTP_TOKEN_FILE` | Bearer token file for that API. |
+| `MARKETFLOW_GUARDIAN_MASTER_KEY` | Fernet key for the mandate credential store at rest. |
+| `MARKETFLOW_TURNKEY_API_BASE` | Enclave signing service endpoint; defaults to the provider's public API. |
+| `MARKETFLOW_GUARDIAN_HTTP_HOST` / `_PORT` | Loopback control API bind address; defaults to `127.0.0.1:8790`. Do not bind it publicly. |
+| `MARKETFLOW_GUARDIAN_HTTP_TOKEN_FILE` | Shared token that control-API callers must present. No token configured means every request is refused. |
 
 ## Operator alerts
 
@@ -71,16 +81,17 @@ it never silently reports success either.
 | Variable | Effect |
 |---|---|
 | `MARKETFLOW_ALERT_WEBHOOK` | POST destination for operator alerts. |
-| `MARKETFLOW_ALERT_BOT_TOKEN` / `MARKETFLOW_ALERT_CHAT_ID` | Chat delivery, when a webhook is not in use. |
+| `MARKETFLOW_ALERT_BOT_TOKEN` / `MARKETFLOW_ALERT_CHAT_ID` | Chat delivery, when a webhook is not in use. Both are required together. |
 
-## Optional inputs
+## Optional inputs and services
 
 | Variable | Effect |
 |---|---|
 | `MARKETFLOW_WHALE_FEED` | Path to a locally collected large-print tape. Unset: the endpoint that reads it reports no feed configured rather than failing. |
 | `MARKETFLOW_FEED_MAX_ACTIVE_BYTES` | Rotation threshold for active JSONL tapes; default 256 MiB. |
-| `MARKETFLOW_POLYMARKET_PROXY_URL` | Local CONNECT proxy for venue traffic. |
+| `MARKETFLOW_POLYMARKET_PROXY_URL` | Egress proxy for venue traffic, when a deployment routes through one. Unset: connections are direct. |
 | `MARKETFLOW_UMA_SUBGRAPH_BASE` | Settlement-history subgraph. Unset: that layer reports itself unavailable. |
+| `MARKETFLOW_MCP_PORT` | Port for the read-only data plane; defaults to 8791. It binds loopback only, and nothing about it is a credential. |
 
 ## Checking what is in effect
 

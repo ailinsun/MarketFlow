@@ -218,7 +218,7 @@ def queue_aware_maker_price(bids: list[tuple[float, float]], asks: list[tuple[fl
         "best_ask": best_ask,
         "max_price": max_price,
         "n_levels": len(levels),
-        "legacy_price": (round(best_bid + tick, 8)
+        "cheapest_price": (round(best_bid + tick, 8)
                          if best_bid is not None and best_bid > 0 and best_bid + tick < best_ask
                          else round(best_ask - tick, 8)),
     }
@@ -705,8 +705,8 @@ def selftest() -> int:
     wide = queue_aware_maker_price(bk_bids, bk_asks, max_price=0.90, tick=0.01)
     check("a wide spread takes the empty level nearest the ask",
           wide["ok"] and abs(wide["price"] - 0.81) < 1e-9 and wide["queue_ahead"] == 0.0)
-    check("the naive rule picks the furthest level on the same book",
-          abs(wide["legacy_price"] - 0.71) < 1e-9)
+    check("the cheapest-price rule picks the furthest level on the same book",
+          abs(wide["cheapest_price"] - 0.71) < 1e-9)
     capped = queue_aware_maker_price(bk_bids, bk_asks, max_price=0.75, tick=0.01)
     check("the edge ceiling clips the top",
           capped["ok"] and abs(capped["price"] - 0.75) < 1e-9)

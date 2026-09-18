@@ -22,8 +22,8 @@ Endpoints (free, unauthenticated, public):
   label of any kind.
 
 Discipline: read-only public data; no keys/orders/wallet. Writes ONLY under
-runtime/feeds/smart_money/ (isolated). 0 touch engine/state.mx/kernel/paper.py/
-arm state, caps or other feeds. Forces a direct connection with an empty
+runtime/feeds/smart_money/ (isolated); never touches arm state, caps or other
+feeds. Forces a direct connection with an empty
 ProxyHandler: coupling a collector to a proxy it does not control is how a feed
 dies quietly when that proxy does.
 """

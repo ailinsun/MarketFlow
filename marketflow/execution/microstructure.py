@@ -1,29 +1,20 @@
-"""Order-book microstructure signal — blueprint #4, first real NON-LLM source.
+"""Order-book microstructure signal.
 
-The belief panel is exhausted as an edge source (: residual beta~0 in every
-slice; the panel's high-conviction anti-consensus bets win only 34%). The lever is
-genuinely INDEPENDENT data, and the most classic, -validated (on crypto) one is
-the order book itself: the resting size on each side, and where the size-weighted
-fair price sits relative to the mid.
-
-This computes, from one snapshot of a binary market's book:
+Computes, from one snapshot of a binary market's book:
   - imbalance I = (Qb - Qa) / (Qb + Qa)  in [-1, 1]   (Qb,Qa = top-N depth)
   - micro_price = (bb*Qa + ba*Qb) / (Qb + Qa)         (standard microstructure
         fair value: sits closer to the side with MORE opposite-side size, i.e. the
         side the next marketable order is more likely to lift)
   - a directional P(YES) signal = the micro_price (clipped), which is the book's
-    OWN estimate of P(YES) — independent of any LLM opinion.
+    OWN estimate of P(YES), independent of any model opinion.
 
-The thesis to be measured (by prediction_market_belief_calibration, as an extra
-"agent"): does micro_price predict the binary RESOLUTION better than the displayed
-mid q? If yes, its incremental log score / residual beta is > 0 and it is a real,
-panel-independent signal to add to the portfolio. This module only COMPUTES the
-signal + a confidence; it places no order and makes no edge claim on its own —
-the calibration instrument is the judge, forward.
+Whether micro_price predicts the binary resolution better than the displayed mid
+is an empirical question for a forward calibration study. This module only
+COMPUTES the signal and a confidence; it places no order and makes no edge claim
+on its own.
 
-Pure functions, no I/O. The live capture (sizes from the price_ws `book` stream)
-is wired in polymarket_price_ws.py; the per-decision logging that feeds the
-calibration is wired in belief_refresher.
+Pure functions, no I/O. Book sizes can come from the price websocket's `book`
+stream (`marketflow.execution.price_ws`).
 """
 
 from __future__ import annotations

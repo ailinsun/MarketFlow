@@ -1,6 +1,6 @@
 """Persistent per-tenant risk budget for automated BUY signatures.
 
-S1 fuse caps bound one order and the Turnkey policy bounds one signature.  A
+the order module fuse caps bound one order and the Turnkey policy bounds one signature.  A
 compromised or looping process can still repeat legal orders, so user-root entry
 needs a second, stateful budget: daily notional, signature frequency, one-market
 concentration and realized-loss stop.
@@ -43,13 +43,24 @@ class RiskBudgetError(RuntimeError):
     """Budget state is invalid, unknown or unavailable; BUY must stop."""
 
 
+# Defaults are fractions of the declared mandate capital, the same base the executor
+# uses, so a mandate of any size gets proportionate limits with no code change. The
+# fractions are illustrative defaults, not a recommendation: a deployment sets its own
+# per tenant under rules.risk_budget. tests/test_scale_invariance.py asserts both that
+# this base agrees with the executor's and that the limits scale with it.
+MANDATE_CAPITAL_USD = float(os.environ.get("MARKETFLOW_MANDATE_CAPITAL_USD") or 1_000_000.0)
+DAILY_ENTRY_NOTIONAL_FRACTION = 0.20      # new exposure opened per day
+MARKET_ENTRY_NOTIONAL_FRACTION = 0.05     # new exposure in any one market per day
+DAILY_REALIZED_LOSS_FRACTION = 0.02       # realized loss that stops entries for the day
+
+
 @dataclass(frozen=True)
 class RiskLimits:
-    max_daily_entry_notional_usd: float = 100.0
+    max_daily_entry_notional_usd: float = MANDATE_CAPITAL_USD * DAILY_ENTRY_NOTIONAL_FRACTION
     max_entries_per_minute: int = 2
     max_entries_per_hour: int = 10
-    max_market_entry_notional_usd: float = 50.0
-    max_daily_realized_loss_usd: float = 25.0
+    max_market_entry_notional_usd: float = MANDATE_CAPITAL_USD * MARKET_ENTRY_NOTIONAL_FRACTION
+    max_daily_realized_loss_usd: float = MANDATE_CAPITAL_USD * DAILY_REALIZED_LOSS_FRACTION
 
     def __post_init__(self) -> None:
         for name in (
@@ -79,18 +90,21 @@ class RiskLimits:
 def limits_for_entry(entry: Mapping[str, Any] | None) -> RiskLimits:
     """Resolve explicit user settings, with conservative defaults.
 
-    Values live under ``rules.risk_budget`` so they do not collide with S1's
+    Values live under ``rules.risk_budget`` so they do not collide with the order module's
     existing per-order and total deployment caps.
     """
     rules = (entry or {}).get("rules")
     risk = rules.get("risk_budget") if isinstance(rules, Mapping) else None
     risk = risk if isinstance(risk, Mapping) else {}
     return RiskLimits(
-        max_daily_entry_notional_usd=risk.get("max_daily_entry_notional_usd", 100.0),
+        max_daily_entry_notional_usd=risk.get(
+            "max_daily_entry_notional_usd", RiskLimits.max_daily_entry_notional_usd),
         max_entries_per_minute=risk.get("max_entries_per_minute", 2),
         max_entries_per_hour=risk.get("max_entries_per_hour", 10),
-        max_market_entry_notional_usd=risk.get("max_market_entry_notional_usd", 50.0),
-        max_daily_realized_loss_usd=risk.get("max_daily_realized_loss_usd", 25.0),
+        max_market_entry_notional_usd=risk.get(
+            "max_market_entry_notional_usd", RiskLimits.max_market_entry_notional_usd),
+        max_daily_realized_loss_usd=risk.get(
+            "max_daily_realized_loss_usd", RiskLimits.max_daily_realized_loss_usd),
     )
 
 
@@ -585,7 +599,7 @@ def selftest() -> dict[str, bool]:
         _usage(load_events("tgRISK1", path=path), now=t0 + 4)["daily_notional_usd"] == 35
     )
     two = reserve_entry(
-        "tgRISK1", idempotency_key="k2", market_id="m2", notional_usd=25,
+        "tgRISK1", idempotency_key="k2", market_id="m2", notional_usd=24,
         limits=limits, now=t0 + 61, path=path,
     )
     release_entry(
