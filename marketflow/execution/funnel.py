@@ -49,9 +49,12 @@ import urllib.request
 from collections import Counter, defaultdict
 
 from marketflow.paths import PROJECT_DIR as REPO, runtime_path
-INTENT_QUEUE = runtime_path("execution/polymarket_agent_intents.jsonl")
-S1_LEDGER = runtime_path("execution/canary_readiness/s1_live_ledger.jsonl")
-DAEMON_LEDGER = runtime_path("execution/canary_readiness/marketflow_live_account_exit_first_daemon_ledger.jsonl")
+# The funnel reads what the execution layer writes. These must name the same files
+# as the writers' own constants; tests/test_runtime_layout.py asserts that they do,
+# because a reader pointed at a path nothing writes reports an empty funnel forever.
+INTENT_QUEUE = runtime_path("execution", "polymarket_intents.jsonl")
+ORDER_LEDGER = runtime_path("execution", "orders", "execution_ledger.jsonl")
+DAEMON_LEDGER = runtime_path("execution", "daemon", "ledger.jsonl")
 OUT_DIR = runtime_path("execution/funnel")
 DATA_API = "https://data-api.polymarket.com"
 
@@ -101,12 +104,13 @@ def _jsonl(path: str) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # the three data sources
 # --------------------------------------------------------------------------- #
-def load_intents(source: str = "flb_harvester", *, path: str = INTENT_QUEUE) -> list[dict]:
-    """Real-money intents as emitted, from the append-only queue."""
-    return [r for r in _jsonl(path) if r.get("source") == source]
+def load_intents(source: str | None = None, *, path: str = INTENT_QUEUE) -> list[dict]:
+    """Intents as emitted, from the append-only queue; `source` narrows to one
+    signal source, and None keeps every row."""
+    return [r for r in _jsonl(path) if source is None or r.get("source") == source]
 
 
-def load_placements(*, path: str = S1_LEDGER, prefix: str = "flb_") -> list[dict]:
+def load_placements(*, path: str = ORDER_LEDGER, prefix: str = "") -> list[dict]:
     """The intents the execution layer confirmed as accepted.
 
     Note that this reads **only that the venue took the order**, never whether it
@@ -133,27 +137,19 @@ def load_placements(*, path: str = S1_LEDGER, prefix: str = "flb_") -> list[dict
 
 
 def _openers() -> list["urllib.request.OpenerDirector"]:
-    """Direct first, falling back to the configured egress tunnel.
+    """Direct first; then the deployment's egress proxy, if one is configured.
 
-    A failure shape worth knowing: some networks run an RPZ DNS firewall that
-    hijacks a venue's whole domain to a placeholder address, transparently
-    redirecting even an explicitly specified resolver, so a direct connection is
-    refused outright and the tunnel is the only route.
-
-    With only a direct path, this instrument goes silently blind the moment such a
-    block takes effect — and it is precisely the instrument that diagnoses why the
-    money path cannot place an order. Blind, it makes a funding problem look like
-    an execution problem.
-
-    On an unrestricted network, a direct connection is faster and leaves the
-    tunnel's bandwidth alone, so both stay.
+    This is the instrument that diagnoses why the money path cannot place an
+    order. With a single path, a network failure on that path would blind it
+    exactly when it is needed, and a funding problem would look like an execution
+    problem. Without MARKETFLOW_POLYMARKET_PROXY_URL there is only the direct path.
     """
-    tunnel = os.environ.get("MARKETFLOW_POLYMARKET_PROXY_URL", "http://127.0.0.1:15237")
-    return [
-        urllib.request.build_opener(urllib.request.ProxyHandler({})),
-        urllib.request.build_opener(
-            urllib.request.ProxyHandler({"http": tunnel, "https": tunnel})),
-    ]
+    tunnel = os.environ.get("MARKETFLOW_POLYMARKET_PROXY_URL", "").strip()
+    openers = [urllib.request.build_opener(urllib.request.ProxyHandler({}))]
+    if tunnel:
+        openers.append(urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": tunnel, "https": tunnel})))
+    return openers
 
 
 def fetch_account_trades(funder_address: str, *, max_pages: int = 8, timeout: float = 25.0) -> list[dict]:
@@ -693,67 +689,8 @@ def taker_conversion(funnel: dict, *, p_win: float, spread_cents: float = 2.0,
 
 
 # --------------------------------------------------------------------------- #
-# Decision gates. The tests are fixed here and do not move with results.
+# Verdicts. The thresholds are fixed in this module and do not move with results.
 # --------------------------------------------------------------------------- #
-# Crossing after a window or two is currently **not done**, for three reasons:
-#   (a) queue-aware pricing has only just shipped with no data yet, and its whole
-#       purpose is to raise the maker fill rate. Stacking a second change on top
-#       makes neither attributable — the strongest of the three reasons;
-#   (b) the size of the prize is pinned by capital: the unfilled share times current
-#       throughput is inherently small on a small book;
-#   (c) the missing precondition is not cancellation, which exists and is tested,
-#       but authorisation: taker buying is granted only inside an in-play speed
-#       window. Doing this would loosen a **deliberately placed** fuse rather than
-#       tune a parameter.
-# Restart test: once enough queue-aware placements have accumulated, if the maker
-# fill rate is still below the threshold, reconsider; if it is at or above, drop the
-# idea, because the first change solved what it was meant to.
-C_REVISIT_MIN_PLACEMENTS = 30
-C_REVISIT_FILL_RATE = 0.70
-
-# Account funding. Size here is not an expression of confidence in an edge; it
-# **buys time**. Throughput is roughly capital divided by order size, while a
-# verdict needs settled samples. Too little capital means months to reach the
-# sample threshold, during which nothing can be confirmed or denied — the worst
-# state to be in, paying the cost while the information never arrives.
-#
-# The two constants below are this module's pre-registered test. Set the funding
-# target from your own risk capacity, and when the verdict period ends, step up or
-# back by the stated rule rather than revising the test mid-way.
-D_TARGET_FUNDING_USD = 100.0         # target account funding, set per deployment
-D_VERDICT_MIN_SETTLED = 100          # settled samples required before stepping up
-
-
-def decision_gates(funnel: dict, pnl: dict, capital: dict) -> dict:
-    """Current status of the two pre-decided items. The tests live in module
-    constants and light up on their own; nobody has to remember them."""
-    n_placed = funnel.get("n_placed") or 0
-    fill = funnel.get("fill_rate_given_placed")
-    n_settled = pnl.get("n_settled_markets") or 0
-    out = {
-        "C_taker_conversion": {
-            "decision": "NOT_NOW",
-            "placements_since_queue_aware": n_placed,
-            "needed": C_REVISIT_MIN_PLACEMENTS,
-            "current_fill_rate": fill,
-            "revisit_threshold": C_REVISIT_FILL_RATE,
-            "status": ("WAITING_FOR_SAMPLE" if n_placed < C_REVISIT_MIN_PLACEMENTS else
-                       "REVISIT_C" if (fill or 0) < C_REVISIT_FILL_RATE else "DROP_C"),
-        },
-        "D_funding": {
-            "decision": f"FUND_TO_{int(D_TARGET_FUNDING_USD)}_USD",
-            "rationale": "buying time to a verdict, not an expression of confidence",
-            "n_settled_markets": n_settled,
-            "needed_for_verdict": D_VERDICT_MIN_SETTLED,
-            "pnl_carried_by_single_market": pnl.get("carried_by_single_market"),
-            "can_fund_an_order_now": capital.get("can_fund_an_order_now"),
-            "status": ("SAMPLE_TOO_SMALL_KEEP_RUNNING" if n_settled < D_VERDICT_MIN_SETTLED
-                       else "READY_FOR_552_VERDICT"),
-        },
-    }
-    return out
-
-
 def verdicts(funnel: dict, ttl: dict) -> dict:
     """The verdict against the pre-registered tests; thresholds are in the module
     docstring and do not move with results."""
@@ -840,8 +777,6 @@ def run(*, emit_interval_sec: float, p_win: float, offline: bool = False,
         "taker": taker_conversion(funnel, p_win=p_win),
         "verdicts": verdicts(funnel, ttl),
     }
-    summary["decision_gates"] = decision_gates(
-        summary["funnel"], summary["real_money_pnl"], summary["capital"])
     if not trades:
         summary["honesty"] = ("the account's trade history could not be fetched, so the "
                               "fill-rate column is invalid and must not be read as a "
@@ -858,7 +793,7 @@ def run(*, emit_interval_sec: float, p_win: float, offline: bool = False,
     with open(os.path.join(OUT_DIR, "history.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps({k: summary[k] for k in
                             ("generated_at", "window_since", "funnel", "placement_loss",
-                             "time_to_close", "verdicts", "real_money_pnl", "decision_gates")}, ensure_ascii=False) + "\n")
+                             "time_to_close", "verdicts", "real_money_pnl")}, ensure_ascii=False) + "\n")
     return summary
 
 
@@ -876,7 +811,7 @@ def selftest() -> int:
     def mk(key, slug, created, ttl=1800, to_close=18000, ask=0.80):
         c = dt.datetime(2026, 7, 20, tzinfo=dt.timezone.utc) + dt.timedelta(seconds=created)
         iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
-        return {"source": "flb_harvester", "idempotency_key": key, "market_slug": slug,
+        return {"source": "model_signal", "idempotency_key": key, "market_slug": slug,
                 "created_at": iso(c), "expires_at": iso(c + dt.timedelta(seconds=ttl)),
                 "close_time": iso(c + dt.timedelta(seconds=to_close)),
                 "ask_price": ask, "max_price": round(ask * 1.01, 4)}
@@ -1025,21 +960,6 @@ def selftest() -> int:
           robust["carried_by_single_market"] is False)
     check("no settled sample reports NO_SETTLED_DATA honestly",
           real_money_pnl([])["verdict"] == "NO_SETTLED_DATA")
-
-    gates = decision_gates({"n_placed": 5, "fill_rate_given_placed": 0.4},
-                           {"n_settled_markets": 9, "carried_by_single_market": True},
-                           {"can_fund_an_order_now": False})
-    check("with too small a sample the gate waits rather than concluding early",
-          gates["C_taker_conversion"]["status"] == "WAITING_FOR_SAMPLE")
-    check("below the sample threshold the funding gate keeps running",
-          gates["D_funding"]["status"] == "SAMPLE_TOO_SMALL_KEEP_RUNNING")
-    ripe = decision_gates({"n_placed": 40, "fill_rate_given_placed": 0.55},
-                          {"n_settled_markets": 120}, {})
-    check("enough sample and a low fill rate reopens the question", ripe["C_taker_conversion"]["status"] == "REVISIT_C")
-    check("enough sample and a good fill rate closes the question",
-          decision_gates({"n_placed": 40, "fill_rate_given_placed": 0.8}, {}, {})
-          ["C_taker_conversion"]["status"] == "DROP_C")
-    check("reaching the sample threshold makes the funding verdict available", ripe["D_funding"]["status"] == "READY_FOR_552_VERDICT")
 
     t = ttl_economics(intents, emit_interval_sec=21600.0)
     check("duty cycle is TTL over emission interval", abs(t["duty_cycle"] - 0.0833) < 1e-3)

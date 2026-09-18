@@ -1,8 +1,9 @@
 """Guardian structural-trap interception — three rules, none of which needs a
 prediction to be right.
 
-Where hosted users actually lose money, measured first-hand over 1.94M fills and
-724 complete address histories:
+Where losses concentrate in the sample behind
+reports/zh/260804_predmkt-first-principles.md (1.94M fills, 724 complete address
+histories):
 
   cheap_ticket   BUY under $0.10. That band is 1.36% of all deployed capital and
                  lost more money than the entire sample's net loss; with it
@@ -30,9 +31,10 @@ Timezone is per user: what they declared, else their own silent window, else the
 night rule does not apply to them. UTC is never assumed and a zone is never
 guessed from anything else.
 
-Interception is a guard rail, not custody of the decision: a user who explicitly
-says "buy it anyway" with a reason gets their order, and the override is what
-lands in the audit trail.
+Every rule ships in shadow mode: a trip is recorded and the order proceeds. A
+deployment promotes a rule to enforce deliberately. The only caller is automated
+entry, where nobody is at the keyboard to take an override, so an enforced rule
+simply refuses.
 """
 
 from __future__ import annotations
@@ -74,8 +76,8 @@ MODES = (MODE_OFF, MODE_SHADOW, MODE_ENFORCE)
 
 # Shadow until deliberately promoted. Unlike the money gates (absent file = safe),
 # the safe default here is the INERT one: enforcing puts a wall in front of a
-# paying user's order, so switching it on is a product decision someone makes on
-# purpose rather than a side effect of deploying this file.
+# order, so switching it on is a decision someone makes on purpose rather than a
+# side effect of deploying this file.
 DEFAULT_MODE = MODE_SHADOW
 
 TRAPS_DIR = os.path.join(gstore.GUARDIAN_ROOT, "traps")
@@ -373,11 +375,10 @@ def fetch_activity_hours(address: str, *, max_pages: int = ACTIVITY_MAX_PAGES,
                          exclude_times: Iterable[float] = ()) -> tuple[list[int], int, bool]:
     """UTC hour histogram of this wallet's fills -> (24 bins, n_trades, ok).
 
-    `exclude_times` drops fills our own automation produced. Measured first-hand
-    on a fully daemon-driven account: the silent window it reports is the
-    automation's schedule, not the person's sleep (UTC-7 for an owner who lives
-    at UTC+7). Reading a robot's rhythm and calling it a bedtime would put the
-    night rule on the wrong eight hours of somebody's day."""
+    `exclude_times` drops fills our own automation produced. On an account driven
+    by automation, the silent window is the automation's schedule, not anybody's
+    sleep; reading a robot's rhythm as a bedtime would put the night rule on the
+    wrong eight hours of somebody's day."""
     rows, ok = fetch_activity_rows(address, max_pages=max_pages)
     hist, n = histogram_from_rows(rows, exclude_times=exclude_times)
     return hist, n, (ok or n >= MIN_TRADES_FOR_TZ)
@@ -478,14 +479,12 @@ def _now_ts() -> float:
 
 def screen_buy(*, price: float | None, tenant_id: str, entry: dict[str, Any] | None = None,
                now_ts: float | None = None, tz_offset_hours: float | None = None,
-               override_reason: str | None = None, context: str = "",
-               log: bool = True) -> dict[str, Any]:
+               context: str = "", log: bool = True) -> dict[str, Any]:
     """Run the BUY rules over one intended order.
 
-    `blocked` is true only for a rule in enforce mode with no user override. A
-    shadow trip is recorded and lets the order through — that is what shadow is.
-    An override never widens a money fuse; it only declines this guard rail, and
-    the reason is what gets written down.
+    `blocked` is true when any tripped rule is in enforce mode. A shadow trip is
+    recorded and lets the order through -- that is what shadow is. A trap can only
+    refuse; it never widens a money fuse.
     """
     now = float(now_ts if now_ts is not None else _now_ts())
     if tz_offset_hours is None:
@@ -506,45 +505,17 @@ def screen_buy(*, price: float | None, tenant_id: str, entry: dict[str, Any] | N
         if v["mode"] == MODE_ENFORCE:
             blocked_by.append(v["rule"])
 
-    override = None
-    if blocked_by and override_reason:
-        override = str(override_reason)[:280]
     out = {
         "verdicts": verdicts,
         "tripped": tripped,
-        "blocked": bool(blocked_by) and override is None,
+        "blocked": bool(blocked_by),
         "blocked_by": blocked_by,
-        "override_reason": override,
         "tz_offset_hours": tz_offset_hours,
         "local_hour": (round(lh, 2) if lh is not None else None),
     }
     if log and tripped:
         log_trap({"event": "trap_screen", "tenant_id": tenant_id, "context": context,
                   "price": price, "tripped": tripped, "blocked": out["blocked"],
-                  "blocked_by": blocked_by, "override_reason": override,
+                  "blocked_by": blocked_by,
                   "local_hour": out["local_hour"], "modes": {v["rule"]: v["mode"] for v in verdicts}})
     return out
-
-
-def explain(rule: str) -> str:
-    """The only explanation somebody sees when an order is intercepted, so it has
-    to stand on its own: one fact, one way through.
-
-    Every line states a measured accounting fact about what has happened in a
-    price band. None of them predicts, promises, or says "you will lose". The way
-    through is deliberate: interception is a guard rail, not a prohibition, and
-    somebody who insists can pass with a stated reason, which lands in the audit
-    trail and is what makes a later review possible.
-    """
-    if rule == RULE_CHEAP_TICKET:
-        return ("Tickets under 10¢ are where this market's losses concentrate: they are "
-                "1.4% of all money deployed, and they lost more than every other trade "
-                "combined. Reply with a reason to buy it anyway.")
-    if rule == RULE_NIGHT_LOTTERY:
-        return ("Sub-20¢ tickets inside this book's declared night window are flagged. "
-                "Reply with a reason to buy it anyway.")
-    if rule == RULE_ZOMBIE:
-        return ("This position is priced at ~$0 — the market has settled the question "
-                "and it is only tying up capital. Closing it is yours to do; we never "
-                "move a position for you.")
-    return ""

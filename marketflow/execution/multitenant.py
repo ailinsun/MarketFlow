@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Multi-tenant non-custodial decision loop (dry-run / research skeleton).
 
-Proves N users can each run position-management rules under their OWN caps and
+Proves N accounts can each run position-management rules under their OWN caps and
 rules in full isolation, without any tenant's config or failure touching another
-tenant or the owner's own live stack. This is the plumbing under the site's
-"Non-custodial by construction" promise: the layer that decides, per user, what
-to do — never the layer that holds a key or moves money.
+tenant or the operator's own stack. It is the layer that decides, per account,
+what to do -- never the layer that holds a key or moves money.
 
 HARD BOUNDARIES (this module never crosses them):
   - Never signs / posts / cancels / reads any private key. It produces per-tenant
     DECISIONS + ALERTS only. Real execution stays behind the existing single-tenant
-    arm-state / caps / kill / canary fuses (`polymarket_execution.py`); this layer
+    arm-state / caps / kill fuses (the order module); this layer
     can only ADD per-tenant tightening, never widen a fuse.
-  - the owner's own live daemon files (her secret_dir / arm_state_file / ledger) are
+  - the operator's own live daemon files (their secret_dir / arm_state_file / ledger) are
     never read or written here. Each tenant lives in its own file namespace under
     `runtime/execution/tenants/<tenant_id>/`.
   - fail-closed: unknown mode / missing credential ref / malformed tenant config
@@ -44,14 +43,14 @@ from typing import Any, Callable, Optional
 HERE = os.path.dirname(os.path.abspath(__file__))
 from marketflow.paths import PROJECT_DIR as REPO_ROOT, runtime_path
 # decide_position is a pure function: the same graduated de-risk / take-profit
-# brain the owner's own monitor uses. Per-tenant rules only pick its kwargs.
+# brain the operator's own monitor uses. Per-tenant rules only pick its kwargs.
 from marketflow.risk import positions as monitor
 from marketflow.execution import orders as pmx
 
-# Settlement guard (the paid-tier value: fail-closed on dirty settlement). Pure
-# read-only sidecar modules from the alerts package (gamma meta + on-chain UMA
-# proposal direction -> settlement-cleanliness verdict). Import is best-effort so
-# a missing sidecar degrades to "no settlement gate", never crashes the loop.
+# Settlement guard (fail-closed on dirty settlement). Pure read-only modules from
+# the monitor package (market metadata + on-chain UMA proposal direction ->
+# settlement-cleanliness verdict). Import is best-effort so a missing module
+# degrades to "no settlement gate", never crashes the loop.
 try:
     from marketflow.monitor import settlement_guard as sguard
     from marketflow.monitor import uma_onchain as uma_chain
@@ -74,9 +73,13 @@ TENANT_SCHEMA_VERSION = "polymarket-tenant-v0.1"
 DECISION_SCHEMA_VERSION = "polymarket-tenant-decision-v0.1"
 
 TENANT_MODES = ("alert_only", "auto")
-ALERT_CHANNELS = ("none", "telegram", "email", "webhook")
+# The channel a deployment's own delivery process should use for a tenant's
+# alerts. Nothing here delivers: every alert is written to the tenant's own alert
+# ledger with its channel name and a ready-to-send text, and delivery (and its
+# credentials) stays outside this module.
+ALERT_CHANNELS = ("none", "email", "webhook")
 
-# Tier-0 public data plane: any address's positions and any market's book are
+# Public data plane: any address's positions and any market's book are
 # public information (on-chain / public APIs). Reading them needs ZERO
 # credentials — that is what makes alert-only non-custodial by construction.
 DATA_API_BASE = "https://data-api.polymarket.com"
@@ -84,16 +87,6 @@ CLOB_API_BASE = "https://clob.polymarket.com"
 PUBLIC_HTTP_TIMEOUT_SEC = 20.0
 MAX_POSITIONS_PER_TENANT = 50
 BOOK_THROTTLE_SEC = 0.25  # be polite to the public book endpoint
-
-# Chat delivery is OPTIONAL and fail-soft: no bot token on disk means alerts stay
-# recorded with delivered=False; the loop never depends on the network. The location
-# follows MARKETFLOW_GUARDIAN_SECRETS_DIR so a deployment keeps every secret in one
-# place, with a per-user default rather than anything inside the repository.
-TELEGRAM_TOKEN_FILE = os.path.join(
-    os.environ.get("MARKETFLOW_GUARDIAN_SECRETS_DIR")
-    or os.path.join(os.path.expanduser("~"), ".marketflow", "secrets"),
-    "telegram_bot_token.txt")
-
 
 class TenantError(Exception):
     """Raised for malformed tenant/registry input (always isolated, never fatal)."""
@@ -164,15 +157,15 @@ def _sanitize_tenant_id(raw: Any) -> str:
 
 @dataclass
 class TenantRules:
-    """Per-user, retail-legible position rules. Compose with the shared
-    `decide_position` brain: the explicit stop-loss / take-profit gate fires
-    first (what the user set), then the graduated model logic fills the rest."""
+    """Per-account position rules. Compose with the shared `decide_position`
+    rules: the explicit stop-loss / take-profit gate fires first (what the account
+    set), then the graduated model logic fills the rest."""
 
     entry_enabled: bool = False
-    # Explicit user-set exits, as fraction of entry cost (0.20 == 20%). None == off.
+    # Explicit exits set per account, as fraction of entry cost (0.20 == 20%). None == off.
     stop_loss_pct: Optional[float] = None
     take_profit_pct: Optional[float] = None
-    # decide_position knobs (shared brain). Defaults mirror the single-tenant stack.
+    # decide_position knobs (shared rules). Defaults mirror the single-account stack.
     risk_buffer: float = 0.03
     edge_buffer: float = 0.05
     kelly_fraction: float = 0.5
@@ -205,7 +198,7 @@ class TenantRules:
 
 @dataclass
 class TenantConfig:
-    """One user. Everything is per-tenant and isolated; nothing here can widen a
+    """One account. Everything is per-tenant and isolated; nothing here can widen a
     module-level fuse (caps clamp through pmx.FuseCaps, which only tightens)."""
 
     tenant_id: str
@@ -214,12 +207,9 @@ class TenantConfig:
     caps: pmx.FuseCaps
     rules: TenantRules
     alert_channel: str
-    # Telegram destination for this tenant's alerts (a chat id is not a secret;
-    # the bot token is, and lives in TELEGRAM_TOKEN_FILE only).
-    telegram_chat_id: Optional[str] = None
     # Auto-mode only; alert_only never references a credential at all.
     secret_dir: Optional[str] = None
-    # Derived isolated file namespace (never overlaps the owner's live stack).
+    # Derived isolated file namespace (never overlaps the operator's own stack).
     root: str = ""
     degraded_reason: Optional[str] = None
 
@@ -264,7 +254,6 @@ class TenantConfig:
                 "edge_buffer": self.rules.edge_buffer,
             },
             "alert_channel": self.alert_channel,
-            "telegram_chat_id": self.telegram_chat_id,
             "has_credentials": bool(self.secret_dir),
             "degraded_reason": self.degraded_reason,
         }
@@ -282,8 +271,8 @@ def load_tenant(raw: dict, *, tenants_root: str = TENANTS_ROOT) -> TenantConfig:
         mode = "alert_only"
     degraded_reason: Optional[str] = None
 
-    # Caps clamp through the WELDED module ceiling: a tenant can ask for less than
-    # $25/$5 but never more (pmx.FuseCaps.__post_init__ min()-clamps).
+    # Caps clamp through the bound module ceiling: a tenant can ask for less than
+    # the default fractions but never more (pmx.FuseCaps.__post_init__ min()-clamps).
     caps_in = raw.get("caps") if isinstance(raw.get("caps"), dict) else {}
     caps = pmx.FuseCaps(
         max_total_deploy_usd=_to_float(caps_in.get("max_total_deploy_usd")) or pmx.DEFAULT_MAX_TOTAL_DEPLOY_USD,
@@ -293,7 +282,6 @@ def load_tenant(raw: dict, *, tenants_root: str = TENANTS_ROOT) -> TenantConfig:
     alert_channel = str(raw.get("alert_channel") or "none").strip().lower()
     if alert_channel not in ALERT_CHANNELS:
         alert_channel = "none"
-    telegram_chat_id = _safe_str(raw.get("telegram_chat_id"), max_len=64)
 
     secret_dir: Optional[str] = None
     if mode == "auto":
@@ -314,7 +302,6 @@ def load_tenant(raw: dict, *, tenants_root: str = TENANTS_ROOT) -> TenantConfig:
         caps=caps,
         rules=TenantRules.from_dict(raw.get("rules")),
         alert_channel=alert_channel,
-        telegram_chat_id=telegram_chat_id,
         secret_dir=secret_dir,
         root=root,
         degraded_reason=degraded_reason,
@@ -350,7 +337,7 @@ def _global_halt_active() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Tier-0 public data plane (zero credentials)
+# Public data plane (zero credentials)
 # ---------------------------------------------------------------------------
 
 def _http_get_json(url: str, *, timeout: float = PUBLIC_HTTP_TIMEOUT_SEC) -> Any:
@@ -420,7 +407,7 @@ def fetch_best_bid(token_id: str) -> Optional[dict[str, Any]]:
 
 
 def public_position_source(tenant: TenantConfig) -> list[dict[str, Any]]:
-    """The Tier-0 position source: public positions for the tenant's public
+    """The public position source: public positions for the tenant's public
     wallet, enriched with live book bids where the market is still open. A
     tenant with no wallet configured simply has no positions (fail-closed)."""
     if not tenant.public_wallet:
@@ -501,12 +488,11 @@ def evaluate_position(tenant: TenantConfig, position: dict) -> dict[str, Any]:
     settlement guard.
 
     Order of authority:
-      1) the user's explicit stop-loss / take-profit (what they set, retail-legible)
-      2) the shared graduated brain (`decide_position`) for everything else
-      3) the SETTLEMENT GUARD (paid-tier fail-closed): if the market's settlement
-         mechanics are not clean (UMA propose/dispute, mispriced proposal, non-
-         standard resolver), any automated action is HELD and the user is alerted
-         instead. The free alert tier never reaches here — it only reads alerts.
+      1) the account's explicit stop-loss / take-profit
+      2) the shared graduated rules (`decide_position`) for everything else
+      3) the SETTLEMENT GUARD (fail-closed): if the market's settlement mechanics
+         are not clean (UMA propose/dispute, mispriced proposal, non-standard
+         resolver), any automated action is HELD and an alert is recorded instead.
     Output is a DECISION + optional alert payload — never an order.
     """
     decision = _decide_position(tenant, position)
@@ -599,18 +585,9 @@ ACTIONABLE_DECISIONS = (
 )
 
 
-def _telegram_token(token_file: str = TELEGRAM_TOKEN_FILE) -> Optional[str]:
-    try:
-        with open(token_file, encoding="utf-8") as f:
-            token = f.read().strip()
-        return token or None
-    except OSError:
-        return None
-
-
 def _alert_text(tenant: TenantConfig, decision: dict) -> str:
-    """Human alert message. Retail-legible: what happened + what to do. Never
-    contains a credential or a full wallet address."""
+    """Human-readable alert text: what happened + what to do. Never contains a
+    credential or a full wallet address."""
     slug = decision.get("market_slug") or decision.get("token_id") or "position"
     pnl = decision.get("unrealized_pnl_pct")
     pnl_txt = f" ({pnl:+.1%})" if isinstance(pnl, (int, float)) else ""
@@ -626,69 +603,12 @@ def _alert_text(tenant: TenantConfig, decision: dict) -> str:
     return f"{action}\n{slug}{pnl_txt}\n{decision.get('reason') or ''}\nhttps://polymarket.com/market/{slug}"
 
 
-def tg_openers() -> "list[urllib.request.OpenerDirector]":
-    """[direct, then env proxy] — the order is the priority. See
-    `send_telegram_alert` for why.
-
-    Note that the handler passed to `build_opener(ProxyHandler({}))` does not show
-    up in `opener.handlers`: empty proxies means it exposes no `<scheme>_open`
-    method, so add_handler drops it as offering nothing. It has already done its
-    job by making build_opener skip the default env-reading ProxyHandler, and the
-    net effect is exactly a direct connection."""
-    return [urllib.request.build_opener(urllib.request.ProxyHandler({})),
-            urllib.request.build_opener()]
-
-
-def send_telegram_alert(chat_id: str, text: str, *, token: Optional[str] = None,
-                        token_file: str = TELEGRAM_TOKEN_FILE,
-                        timeout: float = 10.0) -> dict[str, Any]:
-    """Deliver via Telegram Bot API. Fail-soft by contract: any missing token /
-    network failure returns delivered=False with the error recorded; it never
-    raises into the tenant loop.
-
-    **Direct first, env proxy only as a fallback** — the opposite of this
-    module's data path (`_http_get_json`). An alerting channel must not depend on
-    the thing it is monitoring.
-
-    The failure this prevents: somebody later adds proxy environment variables to
-    the service definition so the data API can reach the venue through a tunnel.
-    The alert path would silently start going through that same tunnel, and the
-    moment the tunnel died the alert saying so could not be sent either. Trying
-    direct first means no future change to the service environment can reintroduce
-    that coupling."""
-    token = token or _telegram_token(token_file)
-    if not token:
-        return {"delivered": False, "error": "no_bot_token"}
-    payload = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    last_error = "no_transport_attempted"
-    for opener in tg_openers():
-        try:
-            req = urllib.request.Request(
-                url, data=payload,
-                headers={"Content-Type": "application/x-www-form-urlencoded"})
-            with opener.open(req, timeout=timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-            if body.get("ok"):
-                return {"delivered": True, "error": None}
-            # The API answered (the payload has an "ok" key), so the transport
-            # works and the failure is at the application layer: a stale chat id,
-            # a revoked token, rate limiting. A different transport would get the
-            # same answer, so return rather than sending twice. Only a transport
-            # exception is worth a fallback.
-            if isinstance(body, dict) and "ok" in body:
-                return {"delivered": False, "error": str(body)[:300]}
-            last_error = str(body)[:300]
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"[:300]
-    return {"delivered": False, "error": last_error}
-
-
 def _emit_alert(tenant: TenantConfig, decision: dict) -> Optional[dict]:
-    """Turn an actionable decision into a per-tenant alert row and deliver it on
-    the tenant's channel. Delivery is fail-soft; this layer never sends money
-    and never signs. Each (tenant, token, decision) alert fires once (dedup by
-    key against the tenant's own alert ledger)."""
+    """Turn an actionable decision into a per-tenant alert row in the tenant's own
+    alert ledger, carrying the channel name and a ready-to-send text for the
+    deployment's delivery process. This layer never sends money, never signs and
+    never delivers. Each (tenant, token, decision) alert fires once (dedup by key
+    against the tenant's own alert ledger)."""
     if decision.get("decision") not in ACTIONABLE_DECISIONS:
         return None
     alert_key = hash_obj({
@@ -709,13 +629,8 @@ def _emit_alert(tenant: TenantConfig, decision: dict) -> Optional[dict]:
         "reason": decision.get("reason"),
         "token_id": decision.get("token_id"),
         "market_slug": decision.get("market_slug"),
-        "delivered": False,
-        "delivery_error": None,
+        "text": _alert_text(tenant, decision),
     }
-    if tenant.alert_channel == "telegram" and tenant.telegram_chat_id:
-        result = send_telegram_alert(tenant.telegram_chat_id, _alert_text(tenant, decision))
-        alert["delivered"] = result["delivered"]
-        alert["delivery_error"] = result["error"]
     append_jsonl(tenant.alerts_file, alert)
     return alert
 
@@ -823,8 +738,10 @@ def selftest() -> dict[str, Any]:
                     "tenant_id": "alpha",
                     "mode": "alert_only",
                     "public_wallet": "0xAAAA000000000000000000000000000000000001",
-                    "alert_channel": "telegram",
-                    "caps": {"max_total_deploy_usd": 10, "max_per_trade_usd": 2},
+                    "alert_channel": "webhook",
+                    # asks for less than the module default -> kept as asked
+                    "caps": {"max_total_deploy_usd": pmx.DEFAULT_MAX_TOTAL_DEPLOY_USD / 10,
+                             "max_per_trade_usd": pmx.DEFAULT_MAX_PER_TRADE_USD / 10},
                     "rules": {"stop_loss_pct": 0.10, "take_profit_pct": 0.30},
                 },
                 {  # looser stop-loss -> same position does NOT trip it
@@ -832,7 +749,7 @@ def selftest() -> dict[str, Any]:
                     "mode": "auto",  # no secret_dir -> fail-closed downgrade to alert_only
                     "public_wallet": "0xBBBB000000000000000000000000000000000002",
                     "alert_channel": "email",
-                    # asks for more than the welded module default -> clamped down
+                    # asks for more than the bound module default -> clamped down
                     "caps": {"max_total_deploy_usd": pmx.DEFAULT_MAX_TOTAL_DEPLOY_USD * 10,
                              "max_per_trade_usd": pmx.DEFAULT_MAX_PER_TRADE_USD * 10},
                     "rules": {"stop_loss_pct": 0.40, "take_profit_pct": 0.90},
@@ -908,59 +825,26 @@ def selftest() -> dict[str, Any]:
             good_run.get("error") is None and (good_run.get("decisions") or [{}])[0].get("decision") == "STOP_LOSS_SELL"
         )
 
-        # --- Tier-0 production pieces (all offline) ---
-        # Data-API row mapping: the exact public schema observed live 2026-07-03.
+        # --- public-data pieces (all offline) ---
+        # Data-API row mapping: the public schema as the venue returns it.
         api_row = {
-            "asset": "1108776196", "conditionId": "0xc901", "size": 8.6206,
-            "avgPrice": 0.5799, "curPrice": 0.42, "currentValue": 3.62,
-            "cashPnl": -1.37, "percentPnl": -27.56,
+            "asset": "1000000001", "conditionId": "0xc0de", "size": 1250.0,
+            "avgPrice": 0.48, "curPrice": 0.36, "currentValue": 450.0,
+            "cashPnl": -150.0, "percentPnl": -25.0,
             "title": "T", "outcome": "Yes", "slug": "some-market", "redeemable": False,
         }
         mapped = _map_position_row(api_row)
         checks["api_row_maps_entry_and_shares"] = (
-            mapped["entry_price"] == 0.5799 and mapped["held_shares"] == 8.6206
+            mapped["entry_price"] == 0.48 and mapped["held_shares"] == 1250.0
         )
-        checks["api_row_pnl_pct_is_fraction"] = abs(mapped["unrealized_pnl_pct"] - (-0.2756)) < 1e-9
+        checks["api_row_pnl_pct_is_fraction"] = abs(mapped["unrealized_pnl_pct"] - (-0.25)) < 1e-9
         checks["api_row_no_book_means_no_model_brain"] = mapped["full_liquidity"] is False
 
         # Settled position -> redemption reminder outranks every trading rule.
         redeem_row = _map_position_row({**api_row, "redeemable": True, "curPrice": 0,
-                                        "currentValue": 8.62, "percentPnl": 49.0})
+                                        "currentValue": 1250.0, "percentPnl": 108.33})
         redeem_dec = evaluate_position(good, redeem_row)
         checks["settled_position_redeem_alert"] = redeem_dec["decision"] == "REDEEMABLE_CLAIM"
-
-        # Telegram is fail-soft: missing token never raises, never delivers.
-        tg = send_telegram_alert("123", "x", token_file=os.path.join(tmp, "absent.txt"))
-        checks["telegram_missing_token_fail_soft"] = (
-            tg["delivered"] is False and tg["error"] == "no_bot_token"
-        )
-
-        # The alert transport must not honour env proxies (see the
-        # send_telegram_alert docstring). Assert the behaviour rather than the
-        # structure: the direct opener holds no ProxyHandler at all, so merging
-        # every handler's proxies and checking for empty is the honest test.
-        def _opener_proxies(op: Any) -> dict:
-            merged: dict = {}
-            for h in op.handlers:
-                if isinstance(h, urllib.request.ProxyHandler):
-                    merged.update(h.proxies)
-            return merged
-
-        saved_proxy_env = {k: os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy")}
-        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:15237"
-        os.environ["https_proxy"] = "http://127.0.0.1:15237"
-        try:
-            direct_op, fallback_op = tg_openers()
-            checks["telegram_direct_opener_ignores_env_proxy"] = _opener_proxies(direct_op) == {}
-            checks["telegram_fallback_opener_honors_env_proxy"] = (
-                _opener_proxies(fallback_op).get("https") == "http://127.0.0.1:15237"
-            )
-        finally:
-            for k, v in saved_proxy_env.items():
-                if v is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = v
 
         # Alert dedup: the same signal does not re-fire on the next tick.
         dedup_t = TenantConfig(
@@ -971,13 +855,15 @@ def selftest() -> dict[str, Any]:
         first = run_tenant(dedup_t, [position])
         second = run_tenant(dedup_t, [position])
         checks["alert_fires_once"] = len(first.get("alerts") or []) == 1
+        checks["alert_row_carries_text_not_delivery"] = (
+            bool((first.get("alerts") or [{}])[0].get("text"))
+            and "delivered" not in (first.get("alerts") or [{}])[0])
         checks["alert_deduped_on_next_tick"] = len(second.get("alerts") or []) == 0
 
         # Onboarding CLI path: add validates through load_tenant; dup refused.
         reg2 = os.path.join(tmp, "reg2.json")
         add_tenant_to_registry(reg2, tenant_id="gamma", public_wallet="0xC",
-                               stop_loss_pct=0.2, alert_channel="telegram",
-                               telegram_chat_id="42")
+                               stop_loss_pct=0.2, alert_channel="webhook")
         try:
             add_tenant_to_registry(reg2, tenant_id="gamma", public_wallet="0xC")
             checks["add_tenant_dup_refused"] = False
@@ -985,11 +871,11 @@ def selftest() -> dict[str, Any]:
             checks["add_tenant_dup_refused"] = True
         added, _skip2 = load_registry(reg2, tenants_root=tmp)
         checks["added_tenant_roundtrips"] = (
-            len(added) == 1 and added[0].telegram_chat_id == "42"
+            len(added) == 1 and added[0].alert_channel == "webhook"
             and added[0].rules.stop_loss_pct == 0.2
         )
 
-        # --- settlement guard (paid-tier fail-closed) ---
+        # --- settlement guard (fail-closed) ---
         if sguard is not None:
             # A stop-loss-tripping position whose settlement is DIRTY (disputed) must
             # be HELD, not auto-sold. Same position with a CLEAN settlement sells.
@@ -1042,7 +928,6 @@ def add_tenant_to_registry(
     stop_loss_pct: Optional[float] = None,
     take_profit_pct: Optional[float] = None,
     alert_channel: str = "none",
-    telegram_chat_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Onboarding = one command. Validates through the same fail-closed
     load_tenant parser before persisting; a broken entry never lands."""
@@ -1051,7 +936,6 @@ def add_tenant_to_registry(
         "mode": mode,
         "public_wallet": public_wallet,
         "alert_channel": alert_channel,
-        "telegram_chat_id": telegram_chat_id,
         "rules": {k: v for k, v in (("stop_loss_pct", stop_loss_pct),
                                     ("take_profit_pct", take_profit_pct)) if v is not None},
     }
@@ -1072,7 +956,7 @@ def add_tenant_to_registry(
 
 def watch(registry_path: str, *, interval_sec: float = 60.0,
           max_ticks: Optional[int] = None) -> int:
-    """Resident Tier-0 loop: every tick, read each tenant's PUBLIC positions and
+    """Resident loop: every tick, read each tenant's PUBLIC positions and
     run their rules. One tenant failing (bad wallet, API hiccup) is isolated by
     run_tenant / run_all; the loop itself only exits on signal."""
     ticks = 0
@@ -1092,12 +976,12 @@ def watch(registry_path: str, *, interval_sec: float = 60.0,
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Polymarket multi-tenant non-custodial position manager (Tier 0).")
+    parser = argparse.ArgumentParser(description="Polymarket multi-tenant non-custodial position manager (public data only).")
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--registry", default=DEFAULT_REGISTRY)
     parser.add_argument("--run", action="store_true", help="one tick over live PUBLIC positions for all tenants")
-    parser.add_argument("--watch", action="store_true", help="resident loop (launchd entry point)")
-    parser.add_argument("--once", action="store_true", help="one watch tick then exit (launchd StartInterval mode)")
+    parser.add_argument("--watch", action="store_true", help="resident loop")
+    parser.add_argument("--once", action="store_true", help="one watch tick then exit (for an external scheduler)")
     parser.add_argument("--interval", type=float, default=60.0)
     parser.add_argument("--smoke", metavar="WALLET", help="end-to-end dry read of one public wallet (no registry write)")
     parser.add_argument("--add-tenant", metavar="TENANT_ID")
@@ -1106,7 +990,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--stop-loss", type=float, default=None, help="fraction of entry cost, e.g. 0.2")
     parser.add_argument("--take-profit", type=float, default=None)
     parser.add_argument("--channel", default="none", choices=list(ALERT_CHANNELS))
-    parser.add_argument("--chat-id", default=None, help="telegram chat id for this tenant")
     args = parser.parse_args(argv)
 
     if args.selftest:
@@ -1132,7 +1015,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         entry = add_tenant_to_registry(
             args.registry, tenant_id=args.add_tenant, public_wallet=args.wallet,
             mode=args.mode, stop_loss_pct=args.stop_loss, take_profit_pct=args.take_profit,
-            alert_channel=args.channel, telegram_chat_id=args.chat_id)
+            alert_channel=args.channel)
         print(json.dumps({"added": entry}, ensure_ascii=False, sort_keys=True, indent=2))
         return 0
 

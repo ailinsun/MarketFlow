@@ -11,11 +11,11 @@ proves all of the following at once:
 * order shape, wallet, side, side-specific maker amount, builder and expiry are bound; and
 * transfer / Batch / withdrawal / export / policy administration are denied.
 
-The user-root route is admission-gated by ``GUARDIAN_USER_ROOT_ENABLED`` and is
-one-way: a record marked ``turnkey_user_root`` never falls back to a platform
-root or local EOA key.  Existing hosted tenants remain on their historical path
-until explicitly migrated to a new wallet; absence of an authority file does
-not rewrite their custody history.
+The user-root route is admission-gated by ``GUARDIAN_USER_ROOT_ENABLED``, and it
+is the only route: there is no platform-held root or local key for a mandate to
+fall back to.  The proof itself is produced outside this service, by a read-only
+reconcile of the account holder's sub-organization; a proof older than
+``DEFAULT_MAX_PROOF_AGE_SEC`` refuses every signature until it is refreshed.
 """
 
 from __future__ import annotations
@@ -36,12 +36,7 @@ AUTHORITY_SCHEMA = "guardian-authority-v0.2"
 # acceptable posture for a delegated book. Raise it per deployment; refusing to go
 # below two is deliberate and is enforced, not advisory.
 MIN_ROOT_QUORUM_THRESHOLD = max(2, int(os.environ.get("MARKETFLOW_MIN_ROOT_QUORUM") or 2))
-MODE_LEGACY_LOCAL = "legacy_local"
-MODE_TURNKEY_PLATFORM_ROOT = "turnkey_platform_root"
 MODE_TURNKEY_USER_ROOT = "turnkey_user_root"
-AUTHORITY_MODES = frozenset(
-    {MODE_LEGACY_LOCAL, MODE_TURNKEY_PLATFORM_ROOT, MODE_TURNKEY_USER_ROOT}
-)
 
 USER_ROOT_ENABLED_FILENAME = "GUARDIAN_USER_ROOT_ENABLED"
 AUTHORITY_FILENAME = "authority.json"
@@ -147,11 +142,6 @@ def user_root_enabled() -> bool:
     return os.path.exists(
         os.path.join(gstore.GUARDIAN_ROOT, USER_ROOT_ENABLED_FILENAME)
     )
-
-
-def authority_mode(entry: Mapping[str, Any] | None) -> str:
-    mode = str((entry or {}).get("authority_mode") or MODE_LEGACY_LOCAL)
-    return mode if mode in AUTHORITY_MODES else "unknown"
 
 
 def load_authority(tenant_id: str) -> dict[str, Any]:
@@ -400,7 +390,7 @@ def save_verified_authority(
 
 
 def public_status(tenant_id: str, *, now: datetime | float | None = None) -> dict[str, Any]:
-    """Safe status for a website/API.  Never returns policy bodies or credentials."""
+    """Safe status for a status endpoint.  Never returns policy bodies or credentials."""
     try:
         record = load_authority(tenant_id)
         summary = validate_user_root_authority(
@@ -485,12 +475,17 @@ def _mask(address: str) -> str:
     return f"{address[:6]}…{address[-4:]}"
 
 
-def _fixture(now: datetime) -> dict[str, Any]:
+# Side-specific ceiling used by the offline fixture (micro-units); any positive
+# integer exercises the same checks.
+FIXTURE_MAKER_CEILING = 10_000_000_000
+
+
+def _fixture(now: datetime, *, tenant_id: str = "AUTH1") -> dict[str, Any]:
     expires = datetime.fromtimestamp(now.timestamp() + 3600, tz=timezone.utc)
     record: dict[str, Any] = {
         "schema": AUTHORITY_SCHEMA,
         "mode": MODE_TURNKEY_USER_ROOT,
-        "tenant_id": "tgAUTH1",
+        "tenant_id": tenant_id,
         "revoked_at": None,
         "root": {
             "owner": "user",
@@ -523,7 +518,7 @@ def _fixture(now: datetime) -> dict[str, Any]:
                 "policy_id": f"policy-{side.lower()}",
                 "api_public_key": "02" + "4" * 64,
                 "capabilities": sorted(ALLOWED_AGENT_CAPABILITIES),
-                "maker_amount_ceiling": 50_000_000,
+                "maker_amount_ceiling": FIXTURE_MAKER_CEILING,
                 "maker_amount_unit": (
                     "pusd_collateral_micro" if side == SIDE_BUY else "shares_micro"
                 ),
@@ -552,20 +547,20 @@ def selftest() -> dict[str, bool]:
 
     try:
         validate_user_root_authority(
-            record, expected_tenant_id="tgAUTH1", side=SIDE_BUY, now=now
+            record, expected_tenant_id="AUTH1", side=SIDE_BUY, now=now
         )
         checks["closed_gate_refuses"] = False
     except AuthorityError:
         checks["closed_gate_refuses"] = True
     with open(gate, "w", encoding="utf-8") as handle:
-        handle.write("phase0-test\n")
+        handle.write("selftest\n")
     summary = validate_user_root_authority(
         record,
-        expected_tenant_id="tgAUTH1",
+        expected_tenant_id="AUTH1",
         side=SIDE_BUY,
         expected_signer_address="0x" + "1" * 40,
         expected_funder_address="0x" + "2" * 40,
-        maker_amount_base_units=49_000_000,
+        maker_amount_base_units=FIXTURE_MAKER_CEILING - 1_000_000,
         expected_builder_code=BYTES32_ZERO,
         now=now,
     )
@@ -580,7 +575,7 @@ def selftest() -> dict[str, bool]:
         try:
             validate_user_root_authority(
                 changed,
-                expected_tenant_id="tgAUTH1",
+                expected_tenant_id="AUTH1",
                 side=kwargs.pop("side", SIDE_BUY),
                 now=kwargs.pop("now", now),
                 **kwargs,
@@ -602,7 +597,7 @@ def selftest() -> dict[str, bool]:
         lambda r: r["policy"].update({"domain_name": "DepositWallet"})
     )
     checks["wrong_tenant_refused"] = refused(
-        lambda r: r.update({"tenant_id": "tgOTHER"})
+        lambda r: r.update({"tenant_id": "OTHER"})
     )
     checks["wrong_wallet_refused"] = refused(
         lambda r: None,
@@ -616,7 +611,7 @@ def selftest() -> dict[str, bool]:
     )
     checks["cap_plus_one_refused"] = refused(
         lambda r: None,
-        maker_amount_base_units=50_000_001,
+        maker_amount_base_units=FIXTURE_MAKER_CEILING + 1,
     )
     checks["wrong_builder_refused"] = refused(
         lambda r: r["policy"].update({"builder_code": "0x" + "9" * 64}),
@@ -631,10 +626,10 @@ def selftest() -> dict[str, bool]:
     stale_now = datetime.fromtimestamp(now.timestamp() + 121, tz=timezone.utc)
     checks["stale_proof_refused"] = refused(lambda r: None, now=stale_now)
 
-    save_verified_authority(record, tenant_id="tgAUTH1", now=now)
-    loaded = load_authority("tgAUTH1")
-    checks["authority_roundtrip"] = loaded["tenant_id"] == "tgAUTH1"
-    status = public_status("tgAUTH1", now=now)
+    save_verified_authority(record, tenant_id="AUTH1", now=now)
+    loaded = load_authority("AUTH1")
+    checks["authority_roundtrip"] = loaded["tenant_id"] == "AUTH1"
+    status = public_status("AUTH1", now=now)
     checks["public_status_redacted"] = (
         status["root_user_controlled"] is True
         and status["marketflow_can_withdraw"] is False
@@ -642,7 +637,7 @@ def selftest() -> dict[str, bool]:
         and "api_public_key" not in json.dumps(status)
     )
     revoked = mark_revocation_observed(
-        "tgAUTH1",
+        "AUTH1",
         turnkey_revoked_at="2026-08-09T00:01:00Z",
         cancel_all_confirmed_at="2026-08-09T00:01:01Z",
     )

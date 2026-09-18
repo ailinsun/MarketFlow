@@ -34,9 +34,9 @@ LOCK_DIR = RUNTIME_DIR / "feeds" / ".locks"
 GZIP_BIN = "/usr/bin/gzip"
 DEFAULT_MAX_ACTIVE_BYTES = 256 * 1024 * 1024
 # Compressed archive sizes are how much a segment costs on disk, not how much history
-# it holds. Measured 2026-07-24 over these substrates: ledger 3.9%, price ticks 2.6%,
-# alerts 0.5% — so 30x under-counts every one of them, and iter_jsonl_tail overshoots
-# rather than returning short.
+# it holds. JSONL of this kind compresses to a few percent of its size (ledgers
+# around 4%, price ticks around 3%, alert rows under 1%), so 30x under-counts every
+# one of them, and iter_jsonl_tail overshoots rather than returning short.
 GZ_EXPANSION_ESTIMATE = 30
 _GZIP_PROCESSES = set()
 

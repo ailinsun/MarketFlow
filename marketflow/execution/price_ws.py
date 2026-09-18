@@ -8,15 +8,13 @@ PUSH subscription to the CLOB market websocket: the exchange streams `book` and
 
 Each `price_change` item carries `best_bid` + `best_ask` directly, so the mid is exact
 without maintaining an order book. We keep a per-token price store
-{token_id: {best_bid, best_ask, mid, ts}} that belief_refresher reads for REAL-TIME
-jump detection — the expensive panel then triggers on a real move within seconds, not
-5 min. No idle spin, no fixed-tick lag.
+{token_id: {best_bid, best_ask, mid, ts}} that consumers read for real-time jump
+detection, reacting within seconds instead of on a 5-minute poll. No idle spin, no
+fixed-tick lag.
 
-CONNECTIVITY: Polymarket geofences, so we connect through the local proxy CONNECT
-tunnel (default 127.0.0.1:15237, a local forward to whatever egress the deployment
-    uses; MARKETFLOW_POLYMARKET_PROXY_URL overrides).
-The supervised loop falls back to a DIRECT connection if the proxy path drops, so the
-monitor keeps working whether or not the tunnel is up.
+CONNECTIVITY: direct by default. A deployment that sends venue traffic through its
+own egress sets MARKETFLOW_POLYMARKET_PROXY_URL; the supervised loop then tries that
+proxy first and falls back to a direct connection if the proxy path drops.
 
 MONEY SAFETY: read-only public market data. Never signs / places / cancels, never
 reads secrets, never touches arm-state / caps / kill. It only writes a price file.
@@ -40,23 +38,24 @@ WS_PORT = 443
 WS_PATH = "/ws/market"
 
 
-def _proxy_host_port() -> tuple[str, int]:
-    """Local CONNECT tunnel endpoint; MARKETFLOW_POLYMARKET_PROXY_URL overrides."""
+def _proxy_host_port() -> Optional[tuple[str, int]]:
+    """The configured CONNECT proxy (MARKETFLOW_POLYMARKET_PROXY_URL), or None for a
+    direct connection. Nothing is assumed when the variable is unset."""
     raw = os.environ.get("MARKETFLOW_POLYMARKET_PROXY_URL", "").strip()
     if raw:
         u = urlparse(raw)
         if u.hostname and u.port:
             return u.hostname, u.port
-    return "127.0.0.1", 15237
+    return None
 
 
-PROXY_HOST, PROXY_PORT = _proxy_host_port()
+PROXY = _proxy_host_port()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 from marketflow.paths import PROJECT_DIR, runtime_path
 from marketflow.feeds.rotation import append_jsonl_lines  # noqa: E402  (path-injected repo module)
 
-OUT_DIR = runtime_path("execution", "belief_refresher")
+OUT_DIR = runtime_path("execution", "price_ws")
 PRICE_STORE = os.path.join(OUT_DIR, "price_ws_store.json")
 MARKET_FEED = runtime_path("feeds", "markets.jsonl")
 SCHEMA_VERSION = "polymarket-price-ws-v0.1"
@@ -145,7 +144,7 @@ def update_from_event(store: dict, ev: dict) -> set:
         bb = max((p for p in (_f(b.get("price")) for b in bids) if p is not None), default=None)
         ba = min((p for p in (_f(a.get("price")) for a in asks) if p is not None), default=None)
         _set_price(store, str(tid), bb, ba, src_ts_ms)
-        # Depth/imbalance/micro-price — the blueprint-#4 microstructure signal.
+        # Depth/imbalance/micro-price — the microstructure signal (execution.microstructure).
         # Only `book` events carry sizes; price_change events keep best bid/ask only.
         try:
             from marketflow.execution import microstructure as _MS
@@ -187,8 +186,8 @@ def write_store(store: dict, *, path: str = PRICE_STORE) -> None:
 # A tick-level book stream evaporates as it passes — the stale-window and
 # reaction-latency execution edge cannot
 # be measured without a persisted history. This appends one row per touched token per event
-# batch (real changes only, watchlist-bounded), the substrate `polymarket_execution_signals.py`
-# reads. Additive: snapshot + consumers (belief_refresher.apply_ws_prices) unchanged.
+# batch (real changes only, watchlist-bounded) as the substrate for that analysis.
+# Additive: the snapshot and its consumers are unchanged.
 # Rotated: TICK_LEDGER holds only the current segment, older ones live under
 # TICK_ARCHIVE_ROOT. Full-history consumers must read via rotation.iter_jsonl_lines.
 TICK_LEDGER = os.path.join(OUT_DIR, "price_ws_ticks.jsonl")
@@ -325,7 +324,9 @@ def watch_tokens(*, n: int = 20, feed_path: str = MARKET_FEED, scan_rows: int = 
 # Async websocket: connect (proxy CONNECT tunnel, direct fallback) -> stream.
 # --------------------------------------------------------------------------- #
 def _proxy_tunnel_sock(timeout: float = 10.0) -> socket.socket:
-    s = socket.create_connection((PROXY_HOST, PROXY_PORT), timeout=timeout)
+    if PROXY is None:
+        raise RuntimeError("no proxy configured (MARKETFLOW_POLYMARKET_PROXY_URL)")
+    s = socket.create_connection(PROXY, timeout=timeout)
     req = "CONNECT %s:%d HTTP/1.1\r\nHost: %s:%d\r\n\r\n" % (WS_HOST, WS_PORT, WS_HOST, WS_PORT)
     s.sendall(req.encode())
     resp = b""
@@ -393,9 +394,10 @@ async def stream_once(*, n: int, use_proxy: bool, write_every: float = 5.0) -> N
 
 
 async def supervised(*, n: int, write_every: float) -> None:
-    """Reconnect forever. Try the proxy first (works VPN-off); on repeated failure
-    fall back to DIRECT (works VPN-on). Exponential-ish backoff, capped."""
-    use_proxy = True
+    """Reconnect forever. With a proxy configured, try it first and alternate with
+    DIRECT on repeated failure; without one, always connect directly.
+    Exponential-ish backoff, capped."""
+    use_proxy = PROXY is not None
     fails = 0
     while True:
         try:
@@ -405,8 +407,8 @@ async def supervised(*, n: int, write_every: float) -> None:
             fails += 1
             print("[price-ws] %s %s connect/stream failed (#%d): %s"
                   % (iso_now(), "proxy" if use_proxy else "direct", fails, str(exc)[:140]), file=sys.stderr)
-            if fails % 3 == 0:
-                use_proxy = not use_proxy   # alternate proxy<->direct so VPN on/off both recover
+            if fails % 3 == 0 and PROXY is not None:
+                use_proxy = not use_proxy   # alternate proxy<->direct so either path recovers
             await asyncio.sleep(min(30.0, 2.0 * fails))
 
 
@@ -502,7 +504,7 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="Offline selftest (no network).")
     ap.add_argument("--once", action="store_true", help="Connect once for --seconds then exit (live smoke).")
     ap.add_argument("--watch", action="store_true", help="Supervised reconnect loop (the service mode).")
-    ap.add_argument("--direct", action="store_true", help="Connect directly (no proxy); for VPN-on.")
+    ap.add_argument("--direct", action="store_true", help="Connect directly even when a proxy is configured.")
     ap.add_argument("--n", type=int, default=20, help="Top-N feed markets to subscribe.")
     ap.add_argument("--seconds", type=float, default=20.0, help="--once duration.")
     ap.add_argument("--write-every", type=float, default=5.0, help="Store flush cadence seconds.")
@@ -516,7 +518,8 @@ def main(argv: Optional[list] = None) -> int:
     if args.once:
         async def _go():
             try:
-                await asyncio.wait_for(stream_once(n=args.n, use_proxy=not args.direct, write_every=args.write_every),
+                await asyncio.wait_for(stream_once(n=args.n, use_proxy=(PROXY is not None and not args.direct),
+                                                   write_every=args.write_every),
                                        timeout=args.seconds)
             except asyncio.TimeoutError:
                 pass

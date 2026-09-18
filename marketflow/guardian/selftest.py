@@ -1,16 +1,19 @@
 """Guardian end-to-end selftest (offline, no SDK / no network).
 
 Proves the hardening invariants without touching a live wallet:
-  * hosted wallet: keygen -> Fernet encrypt -> decrypt roundtrips; plaintext key
-    never on disk.
-  * caps user-set: a tenant's own cap is honored; a fat-finger value clamps to
-    the tenant ceiling (typo guard, not policy).
+  * credential store: delegated agent credentials roundtrip encrypted; plaintext
+    never on disk; a wallet or root key is refused outright.
+  * one signer: only a user-root delegation with a fresh authority proof can get a
+    signing client; every other record is refused, never routed elsewhere.
+  * caps: a mandate's own cap is honored; a fat-finger value clamps to the
+    ceiling (typo guard, not policy).
   * live gated: with GUARDIAN_LIVE_ENABLED absent, every SELL plans dry_run even
     with a fully valid guardian arm file. With it present + valid arm, it clears.
-  * arm binding: a bridge-written arm file can't arm a guardian tenant; a guardian
-    arm file for tenant A can't arm tenant B.
+  * arm binding: an operator-written arm file can't arm a mandate; a guardian arm
+    file for mandate A can't arm mandate B; arm requires a validated authority
+    proof for every side the mode can sign.
   * exit-only: a BUY-side decision is never turned into an order by the exit path.
-  * isolation: one tenant's fault doesn't stop another.
+  * isolation: one mandate's fault doesn't stop another.
 """
 
 from __future__ import annotations
@@ -54,58 +57,56 @@ def selftest() -> dict:
         # paths off the store module at import, so a stale copy would write the
         # real runtime tree instead of the temp one.
         for m in (
-            "store", "executor", "wallet", "traps", "order", "http_api", "service",
+            "store", "executor", "wallet", "traps", "http_api", "service",
             "onboarding", "authority", "risk_budget", "turnkey",
         ):
             sys.modules.pop(m, None)
         from marketflow.guardian import wallet as gwallet
         from marketflow.guardian import store as gstore
         from marketflow.guardian import executor as gexec
+        from marketflow.guardian import turnkey as gturnkey
         from marketflow.execution import orders as pmx
 
-        # Entitlement is an entry-only gate. An absent or broken entitlement
-        # provider must stop BUY, never turn uncertainty into permission; exits do
-        # not call this function at all.
-        from marketflow.guardian import service as gservice
-        original_provider = gservice._entitlement_module
-        try:
-            gservice._entitlement_module = lambda: None
-            checks["entitlement_unavailable_blocks_new_entry"] = not gservice.subscription_ok("TEST1")
-
-            class _BrokenEntitlement:
-                @staticmethod
-                def allows_entry(_chat_id):
-                    raise ValueError("corrupt entitlement provider")
-
-            gservice._entitlement_module = lambda: _BrokenEntitlement()
-            checks["entitlement_corrupt_blocks_new_entry"] = not gservice.subscription_ok("TEST1")
-
-            class _PermissiveEntitlement:
-                @staticmethod
-                def allows_entry(_chat_id):
-                    return True
-
-            gservice._entitlement_module = lambda: _PermissiveEntitlement()
-            checks["entitlement_present_allows_new_entry"] = gservice.subscription_ok("TEST1")
-        finally:
-            gservice._entitlement_module = original_provider
-
-        # --- wallet: keygen + encrypt/decrypt roundtrip, no plaintext on disk ---
-        eoa = gwallet.create_eoa()
-        checks["eoa_has_address_and_key"] = eoa["address"].startswith("0x") and len(eoa["private_key"]) >= 64
-        tdir = gstore.tenant_dir("tgTEST1")
-        gwallet.encrypt_secrets(tdir, {"private_key": eoa["private_key"], "api_key": "k"}, master_key=master_key)
+        # --- credential store: only enclave agent credentials, never a private key ---
+        tdir = gstore.tenant_dir("TEST1")
+        _agent_secret = "agent-" + "d" * 58
+        _delegated = {
+            "key_backend": "turnkey_user_root",
+            "turnkey_organization_id": "org-selftest", "turnkey_signer_address": "0x" + "5" * 40,
+            "funder_address": "0x" + "6" * 40, "api_key": "k", "api_secret": "s", "passphrase": "p",
+            "turnkey_entry_agent_private_key": _agent_secret, "turnkey_entry_agent_public_key": "02" + "a" * 64,
+            "turnkey_exit_agent_private_key": _agent_secret, "turnkey_exit_agent_public_key": "02" + "b" * 64,
+        }
+        gwallet.encrypt_delegated_secrets(tdir, _delegated, master_key=master_key)
         back = gwallet.decrypt_secrets(tdir, master_key=master_key)
-        checks["secrets_roundtrip"] = back["private_key"] == eoa["private_key"]
+        checks["delegated_credentials_roundtrip"] = back == _delegated
         with open(os.path.join(tdir, gwallet.SECRETS_BLOB), "rb") as _bf:
             blob = _bf.read()
-        checks["plaintext_key_not_in_blob"] = eoa["private_key"].encode() not in blob and eoa["private_key"][2:].encode() not in blob
+        checks["plaintext_credential_not_in_blob"] = _agent_secret.encode() not in blob
         wrong = Fernet.generate_key()
         try:
             gwallet.decrypt_secrets(tdir, master_key=wrong)
             checks["wrong_key_cannot_decrypt"] = False
         except Exception:
             checks["wrong_key_cannot_decrypt"] = True
+        # The store refuses a wallet private key outright: holding one would be custody.
+        for _field in ("private_key", "root_private_key", "mnemonic", "seed"):
+            try:
+                gwallet.encrypt_delegated_secrets(tdir, dict(_delegated, **{_field: "0x" + "1" * 64}),
+                                                  master_key=master_key)
+                checks[f"store_refuses_{_field}"] = False
+            except gwallet.WalletError:
+                checks[f"store_refuses_{_field}"] = True
+        # And a tenant that is not enclave-backed cannot be given a signing client:
+        # there is no local-key backend to fall back to.
+        try:
+            gexec.build_client_for_tenant({"private_key": "0x" + "1" * 64}, secret_dir=tdir)
+            checks["non_enclave_tenant_cannot_sign"] = False
+        except gturnkey.TurnkeyError:
+            checks["non_enclave_tenant_cannot_sign"] = True
+        except Exception:
+            checks["non_enclave_tenant_cannot_sign"] = False
+        gwallet.encrypt_delegated_secrets(tdir, _delegated, master_key=master_key)
 
         # Master-key creation is an explicit install action, never a side effect
         # of a web request or execution tick.
@@ -127,11 +128,11 @@ def selftest() -> dict:
         sell = {"decision": "STOP_LOSS_SELL", "token_id": "tok1", "market_slug": "st-market",
                 "rule_fired": "stop_loss", "reason": "down 20%"}
 
-        arm_path = gexec.tenant_arm_file("tgTEST1")
+        arm_path = gexec.tenant_arm_file("TEST1")
 
         # live NOT enabled globally -> dry_run even with a valid guardian arm
-        _write_guardian_arm(arm_path, tenant_id="tgTEST1", total=25.0)
-        plan = gexec.plan_exit_for_decision("tgTEST1", sell, position)
+        _write_guardian_arm(arm_path, tenant_id="TEST1", total=gexec.TENANT_DEFAULT_TOTAL_USD)
+        plan = gexec.plan_exit_for_decision("TEST1", sell, position)
         checks["sell_planned"] = plan is not None
         checks["dry_run_without_live_enabled"] = plan["will_execute_live"] is False
         # default caps = conservative starter values (user hasn't set any yet)
@@ -140,68 +141,90 @@ def selftest() -> dict:
         )
 
         # Caps stated by the mandate are honoured: they are its own risk policy
-        user_entry = {"tenant_id": "tgTEST1", "rules": {"max_total_usd": 500.0, "max_per_trade_usd": 50.0}}
+        user_entry = {"tenant_id": "TEST1", "rules": {"max_total_usd": 500.0, "max_per_trade_usd": 50.0}}
         user_caps = gexec.tenant_caps(user_entry)
         checks["user_cap_honored_above_default"] = (
             user_caps.max_total_deploy_usd == 500.0 and user_caps.max_per_trade_usd == 50.0
         )
         # a fat-finger cap clamps to the tenant ceiling (typo guard, not policy)
-        fat_caps = gexec.tenant_caps({"tenant_id": "tgTEST1", "rules": {"max_total_usd": 9e9}})
+        fat_caps = gexec.tenant_caps({"tenant_id": "TEST1", "rules": {"max_total_usd": 9e9}})
         checks["fat_finger_cap_clamps_to_ceiling"] = (
             fat_caps.max_total_deploy_usd == gexec.TENANT_CAP_CEILING_TOTAL_USD
         )
         # an arm-file cap above the tenant's OWN cap still tampers (caps only tighten)
-        _write_guardian_arm(arm_path, tenant_id="tgTEST1",
+        _write_guardian_arm(arm_path, tenant_id="TEST1",
                             total=gexec.TENANT_CAP_CEILING_TOTAL_USD * 10.0)
-        plan_fat = gexec.plan_exit_for_decision("tgTEST1", sell, position)
+        plan_fat = gexec.plan_exit_for_decision("TEST1", sell, position)
         checks["fat_cap_arm_clamps_down"] = plan_fat["fuses"]["checks"]["arm_state"]["cap_tamper"] is True
 
         # now enable live globally + valid arm -> live-cleared plan (exit_only allows SELL)
-        _write_guardian_arm(arm_path, tenant_id="tgTEST1", total=25.0)
+        _write_guardian_arm(arm_path, tenant_id="TEST1", total=gexec.TENANT_DEFAULT_TOTAL_USD)
         open(gstore.LIVE_ENABLED_FILE, "w").close()
-        plan_live = gexec.plan_exit_for_decision("tgTEST1", sell, position)
+        plan_live = gexec.plan_exit_for_decision("TEST1", sell, position)
         checks["live_cleared_when_enabled_and_armed"] = plan_live["will_execute_live"] is True
 
-        # a BRIDGE-written arm (writer=bridge) must NOT arm the guardian tenant
-        _write_guardian_arm(arm_path, tenant_id="tgTEST1", writer="bridge", ack=pmx.LIVE_ACK_PHRASE, total=25.0)
-        plan_bridge = gexec.plan_exit_for_decision("tgTEST1", sell, position)
-        checks["bridge_arm_cannot_arm_guardian"] = plan_bridge["will_execute_live"] is False
+        # an operator-written arm (the single-operator path) must NOT arm a guardian tenant
+        _write_guardian_arm(arm_path, tenant_id="TEST1", writer=pmx.ARM_WRITER, ack=pmx.LIVE_ACK_PHRASE, total=gexec.TENANT_DEFAULT_TOTAL_USD)
+        plan_operator = gexec.plan_exit_for_decision("TEST1", sell, position)
+        checks["operator_arm_cannot_arm_guardian"] = plan_operator["will_execute_live"] is False
 
         # a guardian arm for tenant A copied to tenant B cannot arm B (tenant binding)
-        _write_guardian_arm(gexec.tenant_arm_file("tgTEST2"), tenant_id="tgTEST1", total=25.0)  # wrong tenant_id inside
-        gwallet.encrypt_secrets(gstore.tenant_dir("tgTEST2"), {"private_key": eoa["private_key"]}, master_key=master_key)
-        plan_b = gexec.plan_exit_for_decision("tgTEST2", sell, position)
+        _write_guardian_arm(gexec.tenant_arm_file("TEST2"), tenant_id="TEST1", total=gexec.TENANT_DEFAULT_TOTAL_USD)  # wrong tenant_id inside
+        gwallet.encrypt_delegated_secrets(gstore.tenant_dir("TEST2"), _delegated, master_key=master_key)
+        plan_b = gexec.plan_exit_for_decision("TEST2", sell, position)
         checks["tenant_bound_arm_rejects_foreign"] = plan_b["will_execute_live"] is False
 
         os.remove(gstore.LIVE_ENABLED_FILE)
 
-        # --- arm.py write path: gate + roundtrip + validator ---
+        # --- arm.py write path: gate + authority + roundtrip + validator ---
         sys.modules.pop("arm", None)
+        from datetime import datetime, timezone
         from marketflow.guardian import arm as garm
-        # registry entry required
-        from marketflow.guardian import store as _gs2
-        _gs2.upsert_tenant({"tenant_id": "tgTEST1", "chat_id": "1", "status": "ready"})
+        from marketflow.guardian import authority as gauth
+        # A record that is not a user-root delegation is refused even with every
+        # gate open and a valid proof on disk: there is no other kind of mandate
+        # to arm, and a proof file cannot promote a record that does not say so.
+        gstore.upsert_tenant({"tenant_id": "PLAIN1", "status": "ready"})
+        _now_arm = datetime.now(timezone.utc).replace(microsecond=0)
+        gauth.save_verified_authority(gauth._fixture(_now_arm, tenant_id="PLAIN1"),
+                                      tenant_id="PLAIN1")
+        # Arm needs a user-root registration with a validated authority proof.
+        _arm_proof = gauth._fixture(_now_arm, tenant_id="TEST1")
+        gauth.save_verified_authority(_arm_proof, tenant_id="TEST1")
+        gstore.upsert_tenant({
+            "tenant_id": "TEST1", "status": "ready",
+            "authority_mode": gauth.MODE_TURNKEY_USER_ROOT,
+            "signer_address": _arm_proof["wallet"]["signer_address"],
+            "funder_address": _arm_proof["wallet"]["funder_address"],
+        })
+        user_root_gate = os.path.join(gstore.GUARDIAN_ROOT, gauth.USER_ROOT_ENABLED_FILENAME)
+        open(user_root_gate, "w").close()
         # gate closed -> arm refused
         try:
-            garm.arm_tenant("tgTEST1")
+            garm.arm_tenant("TEST1")
             checks["arm_refused_while_gate_closed"] = False
         except garm.ArmError:
             checks["arm_refused_while_gate_closed"] = True
         # gate open -> arm writes a file the executor's own validator accepts
         open(gstore.LIVE_ENABLED_FILE, "w").close()
-        res = garm.arm_tenant("tgTEST1")
+        try:
+            garm.arm_tenant("PLAIN1")
+            checks["arm_refused_for_non_user_root_record"] = False
+        except garm.ArmError as exc:
+            checks["arm_refused_for_non_user_root_record"] = "not a user-root delegation" in str(exc)
+        res = garm.arm_tenant("TEST1")
         checks["arm_writes_exit_only"] = res.get("mode") == "exit_only"
-        st = garm.arm_status("tgTEST1")
+        st = garm.arm_status("TEST1")
         checks["arm_status_valid_via_validator"] = st["armed"] is True and st["mode"] == "exit_only"
-        plan_armed = gexec.plan_exit_for_decision("tgTEST1", sell, position)
+        plan_armed = gexec.plan_exit_for_decision("TEST1", sell, position)
         checks["armed_tenant_sell_live_clears"] = plan_armed["will_execute_live"] is True
-        garm.disarm_tenant("tgTEST1")
-        checks["disarm_immediate"] = garm.arm_status("tgTEST1")["armed"] is False
+        garm.disarm_tenant("TEST1")
+        checks["disarm_immediate"] = garm.arm_status("TEST1")["armed"] is False
         os.remove(gstore.LIVE_ENABLED_FILE)
 
         # exit-only: a BUY-side decision is never turned into an order by this path
         buy = {"decision": "ENTRY_SIGNAL", "token_id": "tok1", "rule_fired": "graduated_model"}
-        checks["buy_decision_not_executed_by_exit_path"] = gexec.plan_exit_for_decision("tgTEST1", buy, position) is None
+        checks["buy_decision_not_executed_by_exit_path"] = gexec.plan_exit_for_decision("TEST1", buy, position) is None
 
         # --- automated entry -------------------------------------------------
         # Every one of these asserts a REFUSAL. Entry has many ways to be denied
@@ -215,7 +238,7 @@ def selftest() -> dict:
                "max_price": 0.84, "model_probability": 0.9176,
                "resolution_confirmed_clean": True, "order_min_size": 5.0,
                "created_at": "2026-07-25T00:00:00Z"}
-        tenant = {"tenant_id": "tgTEST1", "chat_id": "1", "status": "ready",
+        tenant = {"tenant_id": "TEST1", "status": "ready",
                   "rules": {"max_total_usd": 200.0, "max_per_trade_usd": 20.0,
                             "risk_profile": "balanced"}}
         # a fixed book so these tests never touch the network
@@ -223,31 +246,31 @@ def selftest() -> dict:
                 "asks": [{"price": "0.82", "size": "500"}], "tick_size": "0.01"}
 
         checks["entry_refused_while_entry_gate_closed"] = gexec.plan_entry_for_intent(
-            "tgTEST1", sig, entry=tenant, book=book, available_usd=100.0) is None
+            "TEST1", sig, entry=tenant, book=book, available_usd=100.0) is None
 
         open(gstore.ENTRY_ENABLED_FILE, "w").close()
         try:
             checks["entry_refuses_unknown_source"] = gexec.plan_entry_for_intent(
-                "tgTEST1", {**sig, "source": "some_new_model"}, entry=tenant,
+                "TEST1", {**sig, "source": "some_new_model"}, entry=tenant,
                 book=book, available_usd=100.0) is None
             checks["entry_refuses_when_daily_count_reached"] = gexec.plan_entry_for_intent(
-                "tgTEST1", sig, entry=tenant, book=book, available_usd=100.0,
+                "TEST1", sig, entry=tenant, book=book, available_usd=100.0,
                 opened_today=5) is None
             # live ask above what the signal authorised -> refuse, never chase
             checks["entry_refuses_when_price_ran_past_signal_max"] = gexec.plan_entry_for_intent(
-                "tgTEST1", sig, entry=tenant, available_usd=100.0,
+                "TEST1", sig, entry=tenant, available_usd=100.0,
                 book={"bids": [{"price": "0.84", "size": "500"}],
                       "asks": [{"price": "0.86", "size": "500"}]}) is None
             # a price outside the profile's evidence-backed band -> refuse
             checks["entry_refuses_outside_profile_band"] = gexec.plan_entry_for_intent(
-                "tgTEST1", {**sig, "max_price": 0.99}, entry=tenant, available_usd=100.0,
+                "TEST1", {**sig, "max_price": 0.99}, entry=tenant, available_usd=100.0,
                 book={"bids": [{"price": "0.86", "size": "500"}],
                       "asks": [{"price": "0.88", "size": "500"}]}) is None
             # balance too small for the exchange minimum -> refuse
             checks["entry_refuses_when_balance_below_minimum"] = gexec.plan_entry_for_intent(
-                "tgTEST1", sig, entry=tenant, book=book, available_usd=2.0) is None
+                "TEST1", sig, entry=tenant, book=book, available_usd=2.0) is None
 
-            plan_e = gexec.plan_entry_for_intent("tgTEST1", sig, entry=tenant,
+            plan_e = gexec.plan_entry_for_intent("TEST1", sig, entry=tenant,
                                                  book=book, available_usd=100.0)
             checks["entry_plans_when_all_conditions_met"] = plan_e is not None
             g = (plan_e or {}).get("guardian") or {}
@@ -267,7 +290,7 @@ def selftest() -> dict:
             # execute refuses if the gate closed between planning and signing
             os.remove(gstore.ENTRY_ENABLED_FILE)
             forced = dict(plan_e or {}, will_execute_live=True)
-            rec = gexec.execute_entry_plan("tgTEST1", forced)
+            rec = gexec.execute_entry_plan("TEST1", forced)
             checks["entry_execute_refuses_after_gate_closed"] = (
                 rec.get("executed") is False and "gate closed" in str(rec.get("reason")))
         finally:
@@ -278,23 +301,33 @@ def selftest() -> dict:
         open(gstore.LIVE_ENABLED_FILE, "w").close()
         try:
             try:
-                garm.arm_tenant("tgTEST1", mode="entry_flb")
+                garm.arm_tenant("TEST1", mode="entry_allowlisted")
                 checks["arm_entry_refused_while_entry_gate_closed"] = False
             except garm.ArmError:
                 checks["arm_entry_refused_while_entry_gate_closed"] = True
             try:
-                garm.arm_tenant("tgTEST1", mode="full")
+                garm.arm_tenant("TEST1", mode="full")
                 checks["arm_refuses_full_mode"] = False
             except garm.ArmError:
                 checks["arm_refuses_full_mode"] = True
             open(gstore.ENTRY_ENABLED_FILE, "w").close()
-            res_e = garm.arm_tenant("tgTEST1", mode="entry_flb")
-            checks["arm_writes_entry_flb"] = res_e.get("mode") == "entry_flb"
+            res_e = garm.arm_tenant("TEST1", mode="entry_allowlisted")
+            checks["arm_writes_entry_allowlisted"] = res_e.get("mode") == "entry_allowlisted"
             checks["arm_entry_valid_via_validator"] = (
-                garm.arm_status("tgTEST1")["mode"] == "entry_flb")
-            garm.disarm_tenant("tgTEST1")
+                garm.arm_status("TEST1")["mode"] == "entry_allowlisted")
+            garm.disarm_tenant("TEST1")
+            # Revoke the proof and the same arm is refused: authority is checked at
+            # arm time, not remembered from an earlier success.
+            gauth.mark_revocation_observed(
+                "TEST1", turnkey_revoked_at=gstore.iso_now(),
+                cancel_all_confirmed_at=gstore.iso_now())
+            try:
+                garm.arm_tenant("TEST1")
+                checks["arm_refused_after_authority_revoked"] = False
+            except garm.ArmError:
+                checks["arm_refused_after_authority_revoked"] = True
         finally:
-            for f in (gstore.LIVE_ENABLED_FILE, gstore.ENTRY_ENABLED_FILE):
+            for f in (gstore.LIVE_ENABLED_FILE, gstore.ENTRY_ENABLED_FILE, user_root_gate):
                 if os.path.exists(f):
                     os.remove(f)
 
@@ -316,14 +349,10 @@ def selftest() -> dict:
         checks["fanout_fleet_halt_trips_on_daily_loss"] = gfan.entry_halted(st)["halted"] is True
         checks["fanout_fleet_halt_clear_when_small"] = gfan.entry_halted({})["halted"] is False
 
-        # store: withdrawal queues as pending_review (no auto transfer path)
-        w = gstore.request_withdrawal("tgTEST1", to_address="0xdead", amount_usd=5.0)
-        checks["withdrawal_pending_review"] = w["status"] == "pending_review"
-
         # service isolation: one tenant faulting doesn't stop another
         sys.modules.pop("service", None)
         from marketflow.guardian import service as gsvc
-        good = {"tenant_id": "tgTEST1", "chat_id": "1", "status": "ready",
+        good = {"tenant_id": "TEST1", "status": "ready",
                 "funder_address": None}  # no funder -> clean error, isolated
         r = gsvc.run_tenant(good)
         checks["missing_funder_isolated_error"] = r["error"] is not None and "funder" in str(r["error"]).lower()
@@ -334,7 +363,6 @@ def selftest() -> dict:
         # trusting an indexer snapshot would keep spending money already gone.
         # Neither direction is acceptable.
         from marketflow import chain
-        from marketflow.guardian import funding_watcher as fw
         seen = []
 
         def _ok(rpc, body):
@@ -343,12 +371,12 @@ def selftest() -> dict:
             call = payload["params"][0]
             return {"result": hex(379311)} if (
                 payload["method"] == "eth_call"
-                and call["to"] == fw.PUSD_CONTRACT
+                and call["to"] == chain.PUSD
                 and call["data"].startswith(chain.ERC20_BALANCE_OF)
                 and call["data"].endswith("eeee000000000000000000000000000000000001")
             ) else {"error": "bad call shape"}
 
-        checks["pusd_onchain_decodes"] = fw.pusd_balance_onchain(
+        checks["pusd_onchain_decodes"] = chain.erc20_balance(
             "0xEeEe000000000000000000000000000000000001", opener=_ok) == 0.379311
         checks["pusd_onchain_stops_at_first_rpc"] = len(seen) == 1
         tried = []
@@ -360,24 +388,19 @@ def selftest() -> dict:
             return {"result": hex(1_500_000)}
 
         checks["pusd_onchain_falls_back"] = (
-            fw.pusd_balance_onchain("0x" + "a" * 40, opener=_dead_then_ok) == 1.5
+            chain.erc20_balance("0x" + "a" * 40, opener=_dead_then_ok) == 1.5
             and len(tried) == 2)
-        checks["pusd_onchain_all_down_is_none"] = fw.pusd_balance_onchain(
+        checks["pusd_onchain_all_down_is_none"] = chain.erc20_balance(
             "0x" + "a" * 40, rpcs=("x", "y"),
             opener=lambda r, b: (_ for _ in ()).throw(OSError("down"))) is None
-        checks["pusd_onchain_bad_result_is_none"] = fw.pusd_balance_onchain(
+        checks["pusd_onchain_bad_result_is_none"] = chain.erc20_balance(
             "0x" + "a" * 40, rpcs=("x",), opener=lambda r, b: {"error": {"code": -32000}}) is None
         checks["pusd_onchain_rejects_malformed_addr"] = (
-            fw.pusd_balance_onchain("not-an-address") is None
-            and fw.pusd_balance_onchain("") is None)
+            chain.erc20_balance("not-an-address") is None
+            and chain.erc20_balance("") is None)
         checks["collateral_no_funder_is_none"] = gexec.tenant_collateral_usd(None) is None
         checks["collateral_uses_injected_reader"] = gexec.tenant_collateral_usd(
             "0x" + "b" * 40, fetcher=lambda a: 12.5) == 12.5
-
-        # --- share ledger (pure accounting; own invariants + real-account replay) ---
-        sys.modules.pop("ledger_shares", None)
-        from marketflow.guardian import ledger_shares as gshares
-        checks.update({f"shares_{k}": v for k, v in gshares.selftest().items()})
 
         # --- Turnkey signing layer (offline: no enclave, no network) ---
         sys.modules.pop("turnkey", None)
@@ -388,8 +411,8 @@ def selftest() -> dict:
         checks.update({f"authority_{k}": v for k, v in gauth.selftest().items()})
         checks.update({f"risk_budget_{k}": v for k, v in grisk.selftest().items()})
 
-        # A fresh user-root tenant carries only scoped P-256 agents. It cannot
-        # overwrite or convert a legacy hosted wallet in place.
+        # A user-root mandate carries only scoped P-256 agent credentials, and an
+        # existing record of any other kind cannot be converted in place.
         from marketflow.guardian import onboarding as gonboard
         from datetime import datetime, timezone
 
@@ -430,7 +453,7 @@ def selftest() -> dict:
             and user_root_entry["authority_mode"] == gauth.MODE_TURNKEY_USER_ROOT
         )
         stored_delegated = gwallet.decrypt_secrets(
-            gstore.tenant_dir("tgAUTH1"), master_key=master_key,
+            gstore.tenant_dir("AUTH1"), master_key=master_key,
         )
         checks["user_root_blob_has_no_eoa_or_root_key"] = (
             "private_key" not in stored_delegated
@@ -439,7 +462,7 @@ def selftest() -> dict:
         )
         try:
             gwallet.encrypt_delegated_secrets(
-                gstore.tenant_dir("tgBADROOT"),
+                gstore.tenant_dir("BADROOT"),
                 {**delegated, "private_key": "11" * 32},
                 master_key=master_key,
             )
@@ -448,15 +471,13 @@ def selftest() -> dict:
             checks["delegated_blob_rejects_eoa_key"] = True
 
         # The service reserves cumulative BUY budget before the executor sees a
-        # live plan. This is independent of Wolfram and isolated per tenant.
-        original_subscription_ok = gsvc.subscription_ok
+        # live plan. It is isolated per tenant.
         original_plan_entry = gexec.plan_entry_for_intent
         original_collateral = gexec.tenant_collateral_usd
         original_execute_entry = gexec.execute_entry_plan
         captured_reservation: dict[str, str] = {}
         open(gstore.ENTRY_ENABLED_FILE, "w").close()
         try:
-            gsvc.subscription_ok = lambda _chat_id: True
             gexec.tenant_collateral_usd = lambda _address: 100.0
             gexec.plan_entry_for_intent = lambda *_a, **_k: {
                 "will_execute_live": True,
@@ -482,8 +503,7 @@ def selftest() -> dict:
             gexec.execute_entry_plan = _fake_execute_with_reservation
             service_rows = gsvc.run_entries(
                 {
-                    "tenant_id": "tgSERVICEAUTH", "chat_id": "SERVICEAUTH",
-                    "status": "ready", "authority_mode": "turnkey_user_root",
+                    "tenant_id": "SERVICEAUTH", "status": "ready", "authority_mode": "turnkey_user_root",
                     "funder_address": "0x" + "2" * 40,
                 },
                 signals=[{"market_id": "market-service", "market_slug": "market-service"}],
@@ -493,7 +513,6 @@ def selftest() -> dict:
                 captured_reservation.get("id") and service_rows
             )
         finally:
-            gsvc.subscription_ok = original_subscription_ok
             gexec.plan_entry_for_intent = original_plan_entry
             gexec.tenant_collateral_usd = original_collateral
             gexec.execute_entry_plan = original_execute_entry
@@ -507,7 +526,7 @@ def selftest() -> dict:
                 return None
 
         reservation = grisk.reserve_entry(
-            "tgAUTH1", idempotency_key="executor-risk-1", market_id="market-exec",  # gitleaks:allow
+            "AUTH1", idempotency_key="executor-risk-1", market_id="market-exec",  # gitleaks:allow
             notional_usd=5.0, limits=grisk.RiskLimits(),
         )
         entry_plan = {
@@ -528,9 +547,9 @@ def selftest() -> dict:
             pmx.execute_order = lambda *_a, **_k: {"executed": True}
             pmx.assert_no_secret_leak = lambda *_a, **_k: []
             executed = gexec.execute_entry_plan(
-                "tgAUTH1", entry_plan, intent=object(), master_key=master_key,
+                "AUTH1", entry_plan, intent=object(), master_key=master_key,
             )
-            states = grisk._usage(grisk.load_events("tgAUTH1"), now=10**10)["reservations"]
+            states = grisk._usage(grisk.load_events("AUTH1"), now=10**10)["reservations"]
             checks["executor_commits_user_root_risk_after_accept"] = (
                 executed["executed"] is True
                 and states[reservation["reservation_id"]]["status"] == grisk.EVENT_COMMITTED
@@ -539,6 +558,40 @@ def selftest() -> dict:
             gexec._with_hard_timeout = original_timeout
             pmx.execute_order = original_execute_order
             pmx.assert_no_secret_leak = original_leak_check
+            for path in (gstore.LIVE_ENABLED_FILE, gstore.ENTRY_ENABLED_FILE):
+                if os.path.exists(path):
+                    os.remove(path)
+
+        # No active reservation for exactly this order, no signature: the executor
+        # refuses a live BUY that did not pass through the risk budget, and it does
+        # so before any client is built.
+        other = grisk.reserve_entry(
+            "AUTH1", idempotency_key="executor-risk-2", market_id="market-reserved",  # gitleaks:allow
+            notional_usd=5.0, limits=grisk.RiskLimits(),
+        )
+        built: list[int] = []
+        open(gstore.LIVE_ENABLED_FILE, "w").close()
+        open(gstore.ENTRY_ENABLED_FILE, "w").close()
+        try:
+            gexec._with_hard_timeout = lambda _sec, _label, _fn: built.append(1) or _FakeClient()
+            for label, extra in (
+                ("missing", {}),
+                ("foreign_market", {"risk_reservation_id": other["reservation_id"]}),
+            ):
+                unreserved = {"will_execute_live": True, "guardian": {
+                    "market_id": "market-unreserved", "estimated_notional_usd": 5.0, **extra}}
+                try:
+                    gexec.execute_entry_plan("AUTH1", unreserved, intent=object(),
+                                             master_key=master_key)
+                    refused = False
+                except grisk.RiskBudgetError:
+                    refused = True
+                except Exception:  # noqa: BLE001 - any other failure means the budget did not refuse first
+                    refused = False
+                checks[f"executor_refuses_buy_with_{label}_reservation"] = refused and not built
+        finally:
+            gexec._with_hard_timeout = original_timeout
+            grisk.release_entry("AUTH1", other["reservation_id"], reason="selftest_cleanup")
             for path in (gstore.LIVE_ENABLED_FILE, gstore.ENTRY_ENABLED_FILE):
                 if os.path.exists(path):
                     os.remove(path)
@@ -552,8 +605,8 @@ def selftest() -> dict:
             bad_agent["turnkey_entry_agent_public_key"] = "03" + "5" * 64
             try:
                 gexec.build_client_for_tenant(
-                    bad_agent, secret_dir=gstore.tenant_dir("tgAUTH1"),
-                    tenant_id="tgAUTH1", side="BUY", maker_amount_base_units=1_000_000,
+                    bad_agent, secret_dir=gstore.tenant_dir("AUTH1"),
+                    tenant_id="AUTH1", side="BUY", maker_amount_base_units=1_000_000,
                 )
                 checks["executor_refuses_authority_agent_mismatch"] = False
             except gauth.AuthorityError:
@@ -561,34 +614,29 @@ def selftest() -> dict:
         finally:
             os.remove(gate)
 
-        # Dispatch must not change behaviour for anyone not explicitly migrated:
-        # a Turnkey-flagged tenant with the fleet gate CLOSED still routes local,
-        # so removing GUARDIAN_TURNKEY_ENABLED is a complete stop.
-        turnkey_secrets = {"key_backend": "turnkey", "private_key": "0x" + "1" * 64}
-        # Gate CLOSED must REFUSE, never route back to the local key: falling back
-        # would hand fund-moving ability to anyone who can delete one file.
-        try:
-            gexec.build_client_for_tenant(turnkey_secrets, secret_dir=tdir)
-            checks["turnkey_closed_gate_refuses_not_falls_back"] = False
-        except gturnkey.TurnkeyError:
-            checks["turnkey_closed_gate_refuses_not_falls_back"] = True
-        except Exception:
-            checks["turnkey_closed_gate_refuses_not_falls_back"] = False
-        gate = os.path.join(gstore.GUARDIAN_ROOT, gturnkey.TURNKEY_ENABLED_FILENAME)
-        open(gate, "w").close()
-        try:
-            checks["turnkey_gate_open_routes_turnkey"] = gturnkey.tenant_is_turnkey_backed(turnkey_secrets)
-            checks["turnkey_gate_open_local_still_local"] = not gturnkey.tenant_is_turnkey_backed(
-                {"private_key": "0x" + "1" * 64})
-            # A Turnkey tenant missing its credentials/address must refuse to build
-            # a client rather than fall through to the local key path.
-            try:
-                gturnkey.build_turnkey_client({"key_backend": "turnkey"}, secret_dir=tdir)
-                checks["turnkey_incomplete_tenant_fails_closed"] = False
-            except gturnkey.TurnkeyError:
-                checks["turnkey_incomplete_tenant_fails_closed"] = True
-        finally:
-            os.remove(gate)
+        # Only a user-root delegation can get a signing client. A record naming any
+        # other backend is refused with the gate closed AND with it open: there is
+        # no second signer for a closed gate or a stale record to fall back to.
+        for label, record in (
+            ("platform_backend", {"key_backend": "turnkey", "private_key": "0x" + "1" * 64}),
+            ("local_key_record", {"private_key": "0x" + "1" * 64}),
+        ):
+            for gate_open in (False, True):
+                gate = os.path.join(gstore.GUARDIAN_ROOT, gturnkey.TURNKEY_ENABLED_FILENAME)
+                if gate_open:
+                    open(gate, "w").close()
+                try:
+                    gexec.build_client_for_tenant(record, secret_dir=tdir, tenant_id="AUTH1", side="SELL")
+                    refused = False
+                except gturnkey.TurnkeyError:
+                    refused = True
+                except Exception:
+                    refused = False
+                finally:
+                    if os.path.exists(gate):
+                        os.remove(gate)
+                state = "open" if gate_open else "closed"
+                checks[f"signing_refuses_{label}_gate_{state}"] = refused
 
         # The SDK must keep emitting integer order amounts: a string makerAmount is
         # DENIED by the enclave cap even when under it, so a silent type change
@@ -617,24 +665,21 @@ def selftest() -> dict:
 
         # --- event-exposure display route (read-only presentation) ---
         from marketflow.guardian import http_api as ghttp
-        ev = ghttp._tenant_exposure_view("tgNOSUCHTENANT")
+        ev = ghttp._tenant_exposure_view("NOSUCHTENANT")
         checks["exposure_unknown_tenant_soft"] = (
             ev.get("available") is False and ev.get("reason") == "not_enrolled")
         # With no Deposit Wallet deployed the answer is "none", stated honestly.
         # Falling back to the signer EOA is forbidden: it is a different address,
         # and reading it would report somebody else's portfolio as this mandate's.
-        gstore.upsert_tenant({"tenant_id": "tgEXPO1", "chat_id": "EXPO1",
-                              "status": "created", "funder_address": None})
+        gstore.upsert_tenant({"tenant_id": "EXPO1", "status": "paused", "funder_address": None})
         ev2 = ghttp._tenant_exposure_view("EXPO1")
         checks["exposure_no_deposit_wallet_is_honest"] = (
             ev2.get("available") is False
             and ev2.get("reason") == "deposit_wallet_not_deployed")
         src = open(os.path.join(os.path.dirname(os.path.abspath(ghttp.__file__)),
                                 "http_api.py"), encoding="utf-8").read()
-        # Scope the source-order assertion to the resident _Handler.  The file
-        # also contains an explicitly invoked one-shot Phase 1 controller with
-        # its own POSTs; those must not make this GET-only resident route look
-        # writable to a whole-file split.
+        # Scope the source-order assertion to the resident _Handler: the route
+        # must be dispatched from do_GET, never reachable from do_POST.
         resident_src = src.split("class _Handler", 1)[1]
         checks["exposure_route_is_get_only"] = (
             '"/guardian/exposure"' in resident_src.split("def do_POST", 1)[0])
@@ -687,31 +732,31 @@ def selftest() -> dict:
 
         # Our own automation's fills carry the schedule of a robot, not a bedtime;
         # they must not reach the histogram the zone is read from.
-        gstore.upsert_tenant({"tenant_id": "tgTZ1", "chat_id": "TZ1", "status": "ready",
+        gstore.upsert_tenant({"tenant_id": "TZ1", "status": "ready",
                               "funder_address": "0xabc"})
-        os.makedirs(gstore.tenant_dir("tgTZ1"), exist_ok=True)
-        with open(gexec.tenant_ledger_file("tgTZ1"), "w", encoding="utf-8") as _lg:
+        os.makedirs(gstore.tenant_dir("TZ1"), exist_ok=True)
+        with open(gexec.tenant_ledger_file("TZ1"), "w", encoding="utf-8") as _lg:
             _lg.write(json.dumps({"generated_at": "2026-08-01T09:00:00Z"}) + "\n")
         own_ts = 1785574800.0  # 2026-08-01T09:00:00Z
-        checks["trap_tz_reads_own_order_times"] = gtraps.own_order_times("tgTZ1") == [own_ts]
+        checks["trap_tz_reads_own_order_times"] = gtraps.own_order_times("TZ1") == [own_ts]
         mixed = [{"timestamp": own_ts + 60}, {"timestamp": own_ts + 3600}]
         h_mix, n_mix = gtraps.histogram_from_rows(mixed, exclude_times=[own_ts])
         checks["trap_tz_excludes_own_automation_fills"] = (n_mix == 1 and h_mix[10] == 1)
-        good = gtraps.refresh_tz_profile("tgTZ1", "0xabc", now_ts=1000.0,
+        good = gtraps.refresh_tz_profile("TZ1", "0xabc", now_ts=1000.0,
                                          hours_fetcher=lambda _a, **_k: (hist, 200, True))
         checks["trap_tz_profile_persisted"] = (good["offset_hours"] == 3
-                                               and gtraps.load_tz_profile("tgTZ1")["offset_hours"] == 3)
+                                               and gtraps.load_tz_profile("TZ1")["offset_hours"] == 3)
         # A failed read must not overwrite a known zone with "unknown": the night
         # rule would silently stop applying every time the feed hiccups.
-        stale = gtraps.refresh_tz_profile("tgTZ1", "0xabc", now_ts=1000.0 + 2 * gtraps.TZ_PROFILE_TTL_SEC,
+        stale = gtraps.refresh_tz_profile("TZ1", "0xabc", now_ts=1000.0 + 2 * gtraps.TZ_PROFILE_TTL_SEC,
                                           hours_fetcher=lambda _a, **_k: ([0] * 24, 0, False))
         checks["trap_tz_fetch_failure_keeps_known_zone"] = stale["offset_hours"] == 3
-        thin = gtraps.refresh_tz_profile("tgTZ2", "0xdef", now_ts=1000.0,
+        thin = gtraps.refresh_tz_profile("TZ2", "0xdef", now_ts=1000.0,
                                          hours_fetcher=lambda _a, **_k: (hist, 5, True))
         checks["trap_tz_thin_history_no_zone"] = (thin["offset_hours"] is None
                                                   and thin["reason"] == "insufficient_history")
         declared = gtraps.refresh_tz_profile(
-            "tgTZ3", None, entry={"rules": {"tz_offset_hours": -5}}, now_ts=1000.0,
+            "TZ3", None, entry={"rules": {"tz_offset_hours": -5}}, now_ts=1000.0,
             hours_fetcher=lambda _a, **_k: ([0] * 24, 0, True))
         checks["trap_tz_user_declared_wins"] = (declared["offset_hours"] == -5
                                                 and declared["source"] == gtraps.TZ_SOURCE_DECLARED)
@@ -719,34 +764,28 @@ def selftest() -> dict:
         # modes: shadow by default, enforce only when deliberately promoted
         checks["trap_default_mode_is_shadow"] = (
             gtraps.rule_mode(gtraps.RULE_CHEAP_TICKET) == gtraps.MODE_SHADOW)
-        shadow = gtraps.screen_buy(price=0.05, tenant_id="tgTZ1", tz_offset_hours=2,
+        shadow = gtraps.screen_buy(price=0.05, tenant_id="TZ1", tz_offset_hours=2,
                                    now_ts=own_ts, log=False)
         checks["trap_shadow_records_without_blocking"] = (
             shadow["tripped"] == [gtraps.RULE_CHEAP_TICKET] and shadow["blocked"] is False)
         gtraps.set_rule_mode(gtraps.RULE_CHEAP_TICKET, gtraps.MODE_ENFORCE)
-        enforced = gtraps.screen_buy(price=0.05, tenant_id="tgTZ1", tz_offset_hours=2,
+        enforced = gtraps.screen_buy(price=0.05, tenant_id="TZ1", tz_offset_hours=2,
                                      now_ts=own_ts)
         checks["trap_enforce_blocks"] = enforced["blocked"] is True
-        override = gtraps.screen_buy(price=0.05, tenant_id="tgTZ1", tz_offset_hours=2,
-                                     now_ts=own_ts,
-                                     override_reason="I know, settling tonight")
-        checks["trap_override_passes_and_is_recorded"] = (
-            override["blocked"] is False and override["override_reason"].startswith("I know"))
         # A corrupted mode file must fall back to shadow, never start blocking.
         with open(gtraps.mode_file(gtraps.RULE_CHEAP_TICKET), "w", encoding="utf-8") as _mf:
             _mf.write("ENFORCE_ALL_THE_THINGS\n")
         checks["trap_bad_mode_file_falls_back_to_shadow"] = (
             gtraps.rule_mode(gtraps.RULE_CHEAP_TICKET) == gtraps.MODE_SHADOW)
         gtraps.set_rule_mode(gtraps.RULE_CHEAP_TICKET, gtraps.MODE_OFF)
-        off = gtraps.screen_buy(price=0.05, tenant_id="tgTZ1", tz_offset_hours=2,
+        off = gtraps.screen_buy(price=0.05, tenant_id="TZ1", tz_offset_hours=2,
                                 now_ts=own_ts, log=False)
         checks["trap_off_mode_never_trips"] = gtraps.RULE_CHEAP_TICKET not in off["tripped"]
         gtraps.set_rule_mode(gtraps.RULE_CHEAP_TICKET, gtraps.MODE_SHADOW)
         with open(gtraps.TRAPS_LOG, encoding="utf-8") as _lf:
             trap_log = [json.loads(x) for x in _lf if x.strip()]
         checks["trap_log_records_every_trip"] = (
-            len(trap_log) >= 2 and any(r.get("blocked") for r in trap_log)
-            and any(r.get("override_reason") for r in trap_log))
+            len(trap_log) >= 1 and any(r.get("blocked") for r in trap_log))
 
         # zombie: what the book already wrote off, vs what is still claimable
         zpos = [
@@ -764,8 +803,8 @@ def selftest() -> dict:
                                                      and zrep["redeemable_value_usd"] == 10.0)
         # 30 of (30 + 20 + 5) open cost basis
         checks["trap_zombie_share_of_open_cost"] = zrep["zombie_share_of_open_cost"] == 0.5455
-        first = gtraps.zombie_check("tgTZ1", zpos)
-        second = gtraps.zombie_check("tgTZ1", zpos)
+        first = gtraps.zombie_check("TZ1", zpos)
+        second = gtraps.zombie_check("TZ1", zpos)
         checks["trap_zombie_prompts_once_per_ticket"] = (
             first["new_items"] == ["dead-1|Yes"] and second["new_items"] == [])
 
@@ -773,7 +812,7 @@ def selftest() -> dict:
         for _r in (gtraps.RULE_CHEAP_TICKET, gtraps.RULE_NIGHT_LOTTERY, gtraps.RULE_ZOMBIE):
             gtraps.set_rule_mode(_r, gtraps.MODE_ENFORCE)
         cheap_pos = {**position, "current_sell_price": 0.02, "break_even_probability": 0.02}
-        exit_plan = gexec.plan_exit_for_decision("tgTEST1", sell, cheap_pos)
+        exit_plan = gexec.plan_exit_for_decision("TEST1", sell, cheap_pos)
         checks["trap_never_blocks_an_exit"] = exit_plan is not None
         # ... and the entry side does refuse the same price. The fleet entry gate
         # has to be open or this would pass for an unrelated reason.
@@ -782,8 +821,8 @@ def selftest() -> dict:
         open(entry_gate, "w").close()
         try:
             blocked_entry = gexec.plan_entry_for_intent(
-                "tgTZ1", {"source": "test_signal_source", "token_id": "tokZ", "ask_price": 0.05},
-                entry={"tenant_id": "tgTZ1"}, book={})
+                "TZ1", {"source": "test_signal_source", "token_id": "tokZ", "ask_price": 0.05},
+                entry={"tenant_id": "TZ1"}, book={})
         finally:
             os.remove(entry_gate)
         with open(gtraps.TRAPS_LOG, encoding="utf-8") as _lf:
@@ -807,39 +846,6 @@ def selftest() -> dict:
                     guardian_src += _sf.read().lower()
         checks["trap_no_falsified_night_claim_in_source"] = not any(
             b.lower() in guardian_src for b in banned)
-
-        # --- the user-commanded BUY path -------------------------------------
-        # Guardian automates exits; an entry is always a user's explicit command.
-        # The invariant worth pinning is that the same structural trap refuses a
-        # user command, that refusing is the default, and that overriding declines
-        # the guard rail without widening any money fuse.
-        from marketflow.guardian import order as gorder
-
-        gtraps.set_rule_mode(gtraps.RULE_CHEAP_TICKET, gtraps.MODE_ENFORCE)
-        try:
-            cheap = 0.5 * gtraps.CHEAP_PRICE_FLOOR
-            refused = gorder.plan_user_buy(
-                "tgTZ1", token_id="tokUB", max_spend_usd=25.0, max_price=cheap,
-                command_id="selftest-user-buy-1", book={"best_ask": cheap})
-            checks["user_buy_refused_by_trap"] = (
-                refused["mode"] == "REFUSED_BY_TRAP"
-                and refused["executed"] is False
-                and refused["will_execute_live"] is False
-                and gtraps.RULE_CHEAP_TICKET in refused["trap"]["blocked_by"]
-                and bool(refused["explain"]))
-
-            overridden = gorder.plan_user_buy(
-                "tgTZ1", token_id="tokUB", max_spend_usd=25.0, max_price=cheap,
-                command_id="selftest-user-buy-2", book={"best_ask": cheap},
-                override_reason="user: hedging a settled leg")
-            # The override declines the guard rail. It must not have turned the
-            # order live: that needs the owner-gated live file and an arm allowing
-            # BUY, neither of which a user command can supply.
-            checks["user_buy_override_declines_rail_without_going_live"] = (
-                overridden.get("mode") != "REFUSED_BY_TRAP"
-                and overridden.get("will_execute_live") is False)
-        finally:
-            gtraps.set_rule_mode(gtraps.RULE_CHEAP_TICKET, gtraps.MODE_SHADOW)
 
     report = {"PASS": all(checks.values()), "checks": checks}
     if skipped:

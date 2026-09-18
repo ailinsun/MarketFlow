@@ -7,8 +7,8 @@ can drift.
 
 Nothing here places, blocks, or modifies anything. It is the instrument to run
 BEFORE promoting a rule from shadow to enforce, and the numbers it prints are the
-honest cost of that promotion: how many of a real person's orders would have hit
-a wall, and for how much.
+honest cost of that promotion: how many of a wallet's orders would have hit a
+wall, and for how much.
 
     python3 marketflow/guardian/trap_shadow.py --fleet --days 90
     python3 marketflow/guardian/trap_shadow.py --wallet 0x… --days 90
@@ -33,7 +33,7 @@ SHADOW_PAGES = 20  # deeper than the live tz read: this one is looking backwards
 def replay_buys(rows: Iterable[dict[str, Any]], *, tz_offset_hours: float | None,
                 since_ts: float | None = None) -> dict[str, Any]:
     """Pure replay of BUY fills. Every trip here is decided by the same functions
-    the live seam uses; only the mode/override layer is absent, because shadow is
+    the live seam uses; only the mode layer is absent, because shadow is
     asking what the rule sees, not what the fleet would do about it."""
     per_rule: dict[str, dict[str, float]] = {
         r: {"n": 0, "usd": 0.0} for r in gtraps.BUY_RULES}
@@ -106,7 +106,7 @@ def replay_wallet(address: str, *, days: int = 90, tz_offset_hours: float | None
 
 
 def replay_fleet(*, days: int = 90, now_ts: float | None = None) -> dict[str, Any]:
-    """Every hosted tenant. A tenant whose zone cannot be determined is reported
+    """Every registered mandate. One whose zone cannot be determined is reported
     as such rather than folded in at UTC — the night rule genuinely does not apply
     to them, and a shadow report that hid that would overstate what promoting it
     would do."""
@@ -166,7 +166,7 @@ def render(rep: dict[str, Any]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Trap-rule shadow accounting (read-only).")
-    ap.add_argument("--fleet", action="store_true", help="every hosted tenant")
+    ap.add_argument("--fleet", action="store_true", help="every registered mandate")
     ap.add_argument("--wallet", help="any public wallet address")
     ap.add_argument("--days", type=int, default=90)
     ap.add_argument("--tz", type=float, default=None, help="override inferred UTC offset")

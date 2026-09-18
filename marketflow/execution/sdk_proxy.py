@@ -19,7 +19,8 @@ from urllib.parse import urlparse, urlunparse
 POLYMARKET_PROXY_URL_ENV = "MARKETFLOW_POLYMARKET_PROXY_URL"
 POLYMARKET_PROXY_LEGACY_ENV = "POLYMARKET_HTTP_PROXY"
 POLYMARKET_PROXY_SECRET_REF = "polymarket_proxy_url.txt"
-DEFAULT_POLYMARKET_PROXY_URL = "http://127.0.0.1:15237"
+# No proxy unless the deployment configures one: venue traffic goes direct.
+DEFAULT_POLYMARKET_PROXY_URL = ""
 # Both versions have the byte-for-byte same transport implementation and the
 # exact constructor surface patched below.  b21 is the locked live runtime; b8
 # remains supported for the audited validation environment.  Unknown versions

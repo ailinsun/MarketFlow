@@ -309,15 +309,15 @@ def dynamic_stake_usd(
     edge_ci_upper_pct: Optional[float] = None,
     edge_n: Optional[int] = None,
     fill_prob: Optional[float] = None,
-    legacy_equity_fraction: Optional[float] = None,
+    simple_equity_fraction: Optional[float] = None,
     meta: Optional[dict] = None,
     arm_state_path: str = ARM_STATE_PATH,
 ) -> dict[str, Any]:
     """Per-trade budget = min(arm_cap, kelly, risk budget remaining, cash), with
     full diagnostics alongside.
 
-    When `legacy_equity_fraction` is supplied, the diagnostics report the simpler
-    formula's answer side by side for comparison (useful in shadow mode). If any
+    When `simple_equity_fraction` is supplied, the diagnostics report that simpler formula's answer
+    side by side for comparison (useful in shadow mode). If any
     step cannot be computed, `budget_usd` falls back to that formula and
     `fallback_reason` says why.
 
@@ -331,11 +331,11 @@ def dynamic_stake_usd(
         "arm_cap_usd": arm_cap_usd, "cash_usd": cash_usd, "bankroll_usd": bankroll_usd,
         "n_open": len(open_positions), "fallback_reason": None,
     }
-    legacy = None
-    if legacy_equity_fraction is not None:
-        legacy = min(arm_cap_usd, max(exchange_min_usd, cash_usd * legacy_equity_fraction))
-        diag["legacy_budget_usd"] = round(legacy, 6)
-        diag["legacy_equity_fraction"] = legacy_equity_fraction
+    simple = None
+    if simple_equity_fraction is not None:
+        simple = min(arm_cap_usd, max(exchange_min_usd, cash_usd * simple_equity_fraction))
+        diag["simple_budget_usd"] = round(simple, 6)
+        diag["simple_equity_fraction"] = simple_equity_fraction
 
     if max_portfolio_true_risk is None:
         rt = edge_scaled_risk_target(edge_ci_lower_pct=edge_ci_lower_pct,
@@ -349,7 +349,7 @@ def dynamic_stake_usd(
     ratio = marginal_risk_ratio(open_positions, candidate, meta=meta) if used is not None else None
     if used is None or ratio is None:
         diag["fallback_reason"] = "true_exposure_unavailable"
-        diag["budget_usd"] = round(legacy if legacy is not None else 0.0, 6)
+        diag["budget_usd"] = round(simple if simple is not None else 0.0, 6)
         return diag
 
     naive = sum(float(p.get("cost_usd") or 0.0) for p in open_positions)
@@ -382,8 +382,8 @@ def dynamic_stake_usd(
         diag["binding_constraint"] = "below_exchange_min"
         return diag
     diag["budget_usd"] = round(budget, 6)
-    if legacy is not None:
-        diag["vs_legacy_x"] = (round(budget / legacy, 4) if legacy > 0 else None)
+    if simple is not None:
+        diag["vs_simple_x"] = (round(budget / simple, 4) if simple > 0 else None)
     # Fill probability is **diagnostic only and relaxes nothing**. Everything
     # filling at once is genuinely possible, and expected-value risk control blows
     # up on that day. What follows is a capital-efficiency view, not a constraint.
@@ -431,8 +431,8 @@ def shadow_record_sizing(
     candidate: dict,
     arm_cap_usd: float,
     exchange_min_usd: float,
-    legacy_budget_usd: float,
-    legacy_equity_fraction: float,
+    simple_budget_usd: float,
+    simple_equity_fraction: float,
     edge_estimates: Optional[list[dict]] = None,
     fill_prob: Optional[float] = None,
     ledger_path: Optional[str] = None,
@@ -453,7 +453,7 @@ def shadow_record_sizing(
         cash_usd=cash_usd, bankroll_usd=bankroll_usd, open_positions=open_positions,
         candidate=candidate, arm_cap_usd=arm_cap_usd, exchange_min_usd=exchange_min_usd,
         max_portfolio_true_risk=(rt["risk_target"] if rt else None),
-        fill_prob=fill_prob, legacy_equity_fraction=legacy_equity_fraction, meta=meta)
+        fill_prob=fill_prob, simple_equity_fraction=simple_equity_fraction, meta=meta)
     row = {
         "schema": "risk-budget-shadow-v0.2",
         "ts": __import__("datetime").datetime.now(
@@ -461,7 +461,7 @@ def shadow_record_sizing(
         "track": track,
         "cid": candidate.get("cid") or candidate.get("condition_id"),
         "slug": candidate.get("slug"),
-        "legacy_budget_usd": round(legacy_budget_usd, 6),
+        "simple_budget_usd": round(simple_budget_usd, 6),
         "dynamic_budget_usd": d.get("budget_usd"),
         "binding_constraint": d.get("binding_constraint"),
         "risk_target": d.get("max_portfolio_true_risk"),
@@ -495,16 +495,16 @@ def selftest() -> dict[str, Any]:
     # no positions: the full risk budget is available and arm_cap or cash binds
     d0 = dynamic_stake_usd(cash_usd=1000.0, bankroll_usd=1000.0, open_positions=[],
                            candidate=mk("0xa", 0.0), arm_cap_usd=20.0,
-                           exchange_min_usd=4.25, legacy_equity_fraction=0.15)
+                           exchange_min_usd=4.25, simple_equity_fraction=0.15)
     checks["empty_book_budget_capped_by_arm"] = (d0["budget_usd"] == 20.0
                                                  and d0["binding_constraint"] == "arm_cap")
     checks["empty_book_true_exposure_zero"] = d0.get("true_exposure_usd") == 0.0
 
-    # risk budget exhausted -> 0, and never falls back to a positive legacy number
+    # risk budget exhausted -> 0, and never falls back to a positive simpler-formula number
     big = [mk(f"0x{i}", 100.0) for i in range(4)]
     d1 = dynamic_stake_usd(cash_usd=1000.0, bankroll_usd=1000.0, open_positions=big,
                            candidate=mk("0xz", 0.0), arm_cap_usd=20.0,
-                           exchange_min_usd=4.25, legacy_equity_fraction=0.15,
+                           exchange_min_usd=4.25, simple_equity_fraction=0.15,
                            max_portfolio_true_risk=0.333)   # explicit: this case tests exhaustion
     checks["risk_budget_can_exhaust"] = (d1["budget_usd"] == 0.0
                                          and d1["binding_constraint"] == "risk_budget_exhausted")
@@ -528,7 +528,7 @@ def selftest() -> dict[str, Any]:
     checks["below_exchange_min_returns_zero"] = (d4["budget_usd"] == 0.0
                                                  and d4["binding_constraint"] == "below_exchange_min")
 
-    # fail-safe: when exposure cannot be computed, fall back to the legacy formula
+    # fail-safe: when exposure cannot be computed, fall back to the simpler formula
     # and **never to something larger**
     _saved = globals()["_load_exposure_module"]
     globals()["_load_exposure_module"] = lambda: None
@@ -536,11 +536,11 @@ def selftest() -> dict[str, Any]:
         d5 = dynamic_stake_usd(cash_usd=100.0, bankroll_usd=100.0,
                                open_positions=[mk("0xa", 20.0)], candidate=mk("0xb", 0.0),
                                arm_cap_usd=20.0, exchange_min_usd=4.25,
-                               legacy_equity_fraction=0.15)
-        checks["failsafe_falls_back_to_legacy"] = (
+                               simple_equity_fraction=0.15)
+        checks["failsafe_falls_back_to_simple"] = (
             d5["fallback_reason"] == "true_exposure_unavailable"
-            and abs(d5["budget_usd"] - d5["legacy_budget_usd"]) < 1e-9)
-        checks["failsafe_never_larger_than_legacy"] = d5["budget_usd"] <= d5["legacy_budget_usd"]
+            and abs(d5["budget_usd"] - d5["simple_budget_usd"]) < 1e-9)
+        checks["failsafe_never_larger_than_simple"] = d5["budget_usd"] <= d5["simple_budget_usd"]
     finally:
         globals()["_load_exposure_module"] = _saved
 
@@ -564,14 +564,14 @@ def selftest() -> dict[str, Any]:
                                     arm_state_path=_tf.name)
     checks["edge_positive_gives_full_base"] = abs(r_pos["risk_target"] - 0.5) < 1e-9
     # straddling zero -> shrink by the upper bound's share of the interval
-    r_flb = edge_scaled_risk_target(edge_ci_lower_pct=-2.114, edge_ci_upper_pct=1.050,
+    r_mix = edge_scaled_risk_target(edge_ci_lower_pct=-2.0, edge_ci_upper_pct=1.0,
                                     arm_state_path=_tf.name)
-    checks["flb_real_ci_scales_to_expected"] = abs(r_flb["risk_target"] - 0.5 * (1.050 / 3.164)) < 1e-6
-    checks["flb_real_ci_is_meaningfully_below_base"] = r_flb["risk_target"] < 0.5 * 0.4
+    checks["straddling_ci_scales_to_expected"] = abs(r_mix["risk_target"] - 0.5 * (1.0 / 3.0)) < 1e-6
+    checks["straddling_ci_is_meaningfully_below_base"] = r_mix["risk_target"] < 0.5 * 0.4
     # the further the lower bound goes negative, the harder it shrinks (monotone)
-    r_worse = edge_scaled_risk_target(edge_ci_lower_pct=-10.0, edge_ci_upper_pct=1.050,
+    r_worse = edge_scaled_risk_target(edge_ci_lower_pct=-10.0, edge_ci_upper_pct=1.0,
                                       arm_state_path=_tf.name)
-    checks["more_negative_lower_bound_shrinks_more"] = r_worse["risk_target"] < r_flb["risk_target"]
+    checks["more_negative_lower_bound_shrinks_more"] = r_worse["risk_target"] < r_mix["risk_target"]
     # missing interval -> neither quietly enlarge nor quietly shrink; label a reason
     r_na = edge_scaled_risk_target(edge_ci_lower_pct=None, edge_ci_upper_pct=None,
                                    arm_state_path=_tf.name)

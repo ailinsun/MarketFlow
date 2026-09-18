@@ -17,10 +17,10 @@ Fuses (all code-enforced, fail-closed):
      either is refused. SELL (exit) is never blocked by the deploy caps, only
      bounded by held shares (no naked short).
   2. kill switch: a flag file or env var; when set, all live execution refuses.
-  3. dry_run is the default. Live requires a valid armed arm-state file (one
-     single-source control file the bridge writes on an owner frontend click;
-     carries armed + mode + phrase, optional expiry + budget). The arm mode must
-     also permit the order side. No valid armed arm-state => forced dry_run.
+  3. dry_run is the default. Live requires a valid armed arm-state file — the
+     single control file an operator writes, carrying armed + mode + phrase and
+     an optional expiry and budget. The arm mode must also permit the order side.
+     No valid armed arm-state means a forced dry run.
   4. exit-first: SELL/close is the primary path; BUY/open is secondary + capped.
 
 Boundaries:
@@ -28,16 +28,14 @@ Boundaries:
     order it WOULD place plus a read-only fill estimate;
   - secrets are read only from local secret refs, never printed, never ledgered;
     every ledger row passes assert_no_secret_leak;
-  - no crypto paper.py / live kernel / state.mx coupling;
-  - the new SDK derives the signature scheme from wallet=funder; there is no old
-    py_clob_client signature_type int. wallet_type is detected and asserted
-    instead (the owner's funder = DEPOSIT_WALLET).
+  - the venue SDK derives the signature scheme from wallet=funder, so there is no
+    signature_type integer to pass; wallet_type is detected and asserted instead.
 
 Run the dry_run selftest (no network, no SDK, no secrets):
-  python3 marketflow/execution/orders.py --selftest
+  python3 -m marketflow.execution.orders --selftest
 
-Live execution stays the owner's toggle and is never exercised by this module's
-selftest or by an unattended run.
+Live execution is an operator decision and is never exercised by this module's
+self-test or by an unattended run.
 """
 
 from __future__ import annotations
@@ -80,9 +78,10 @@ DEFAULT_SELFTEST = os.path.join(OUT_DIR, "selftest_report.json")
 DEFAULT_KILL_FILE = os.path.join(OUT_DIR, "EXECUTION_KILL")
 DEFAULT_GLOBAL_HALT_FILE = runtime_path("execution", "HALT")
 DEFAULT_SECRET_DIR = os.path.join(os.path.expanduser("~"), ".marketflow", "secrets")
-# Single-source arm-state: ONE control file both S1 and the S3 daemon read; the
-# bridge is the only writer (on an owner frontend click). Lives under runtime/
-# (not secrets/) because it carries no credential — only armed/mode + a marker.
+# Single-source arm state: one control file that both this module and the daemon
+# read, written only by an explicit operator action. It lives under the runtime
+# tree rather than beside secrets because it carries no credential — only the
+# armed flag, the mode and a marker.
 DEFAULT_ARM_STATE_FILE = runtime_path("execution", "polymarket_arm_state.json")
 
 SCHEMA_VERSION = "polymarket-execution-v0.1"
@@ -138,15 +137,18 @@ OWNER_ARM_TTL_DAYS = 30
 
 KILL_SWITCH_ENV = "MARKETFLOW_POLYMARKET_KILL"
 LIVE_ACK_PHRASE = "OWNER_APPROVES_POLYMARKET_LIVE_EXECUTION"
-# "entry_flb" (260725) is the hosted-tenant entry mode: it permits the same sides
+# "entry_allowlisted" is the delegated-mandate entry mode: it permits the same sides
 # as "full", but names the capability the user actually authorised instead of
 # granting a blanket one. Which SIGNAL SOURCE may open a position is enforced by
-# the guardian executor's source allowlist — S1 never sees a source — so this mode
+# the guardian executor's source allowlist — the order module never sees a source — so this mode
 # is a defence-in-depth marker plus an audit trail of what the user agreed to, not
 # the source restriction itself. Owner-path arm writes (bridge) never emit it.
-ARM_MODES = ("off", "exit_only", "entry_flb", "full")
-LIVE_VALID_ARM_MODES = ("exit_only", "entry_flb", "full")
-ARM_WRITER = "bridge"
+ARM_MODES = ("off", "exit_only", "entry_allowlisted", "full")
+LIVE_VALID_ARM_MODES = ("exit_only", "entry_allowlisted", "full")
+# The only writer whose arm file this module accepts: an explicit operator action.
+# A delegated mandate's arm file carries a different writer and can never arm this
+# path, and vice versa (see the guardian executor's GUARDIAN_ARM_WRITER).
+ARM_WRITER = "operator"
 EXPECTED_WALLET_TYPE = "DEPOSIT_WALLET"
 WALLET_TYPES = ("EOA", "POLY_PROXY", "GNOSIS_SAFE", "DEPOSIT_WALLET")
 
@@ -205,9 +207,6 @@ EXECUTION_BOUNDARIES = [
     "no_secret_in_ledger",
     "wallet_address_masked_in_ledger",
     "scoped_polymarket_sdk_http_proxy",
-    "no_crypto_paper_py",
-    "no_live_kernel",
-    "no_state_mx",
 ]
 
 # Only these SDK methods are ever referenced on a call path. create_*/post_order/
@@ -338,7 +337,7 @@ def load_polymarket_secret_refs(secret_dir: str) -> dict[str, str]:
         raise ExecutionError(f"missing Polymarket secret refs: {', '.join(sorted(missing))}")
     secrets = {key: read_secret_ref(secret_dir, filename) for key, filename in SECRET_REFS.items()}
     if os.path.exists(os.path.join(secret_dir, OWNER_TURNKEY_GATE_FILE)):
-        # Validate every Turnkey ref now. A partially migrated owner must fail
+        # Validate every enclave ref now. A partial enclave setup must fail
         # before any SDK client is constructed, never fall back to the raw key.
         owner_turnkey_material(secret_dir)
     else:
@@ -427,12 +426,13 @@ class FuseCaps:
         # Caps may only TIGHTEN below the ceiling: any caller-supplied cap (daemon
         # config, CLI flag, arm-state file) is clamped to the ceiling, never above.
         # The DEFAULT ceiling equals the module constants, so any default-built
-        # FuseCaps — external multi-tenant users + every legacy call site — stays
-        # WELDED to $25/$5 (non-custodial: per-tenant only tightens). Only the
-        # the principal path (owner_fuse_caps) raises the ceiling, letting them set
-        # own caps up to the fat-finger ceiling. The ceiling itself is clamped to
-        # OWNER_CAP_CEILING so a tampered ceiling can't uncap. Single-point
-        # structural invariant regardless of who constructs FuseCaps.
+        # FuseCaps -- delegated mandates, multi-tenant accounts, every caller that
+        # does not ask otherwise -- stays bound to the default fractions (per-tenant
+        # only tightens). Only the operator path (owner_fuse_caps) raises the
+        # ceiling, letting the operator set its own caps up to the fat-finger
+        # ceiling. The ceiling itself is clamped to OWNER_CAP_CEILING so a tampered
+        # ceiling can't uncap. Single-point structural invariant regardless of who
+        # constructs FuseCaps.
         self.ceiling_total_usd = min(float(self.ceiling_total_usd), OWNER_CAP_CEILING_TOTAL_USD)
         self.ceiling_per_trade_usd = min(float(self.ceiling_per_trade_usd), OWNER_CAP_CEILING_PER_TRADE_USD)
         self.ceiling_drawdown_usd = min(float(self.ceiling_drawdown_usd), OWNER_CAP_CEILING_DRAWDOWN_USD)
@@ -446,10 +446,11 @@ def owner_fuse_caps(
     max_per_trade_usd: float | None = None,
     max_drawdown_usd: float | None = None,
 ) -> FuseCaps:
-    """Build caps for the owner's OWN single-tenant stack, raisable up to the owner
-    fat-finger ceiling. External multi-tenant users must NOT use this — they use
-    FuseCaps() directly, which stays welded to $25/$5/$10 (non-custodial:
-    per-tenant only tightens). None keeps the default weld value for that field.
+    """Build caps for the operator's OWN single-account stack, raisable up to the
+    operator fat-finger ceiling. Delegated mandates and multi-tenant accounts must
+    NOT use this -- they use FuseCaps() directly, which stays bound to the default
+    fractions (per-tenant only tightens). None keeps the default value for that
+    field.
     """
     return FuseCaps(
         max_total_deploy_usd=(
@@ -687,8 +688,8 @@ def kill_switch_state(kill_file: str) -> dict[str, Any]:
 
 def arm_mode_permits(mode: str, side: str) -> bool:
     """Which order sides a given arm mode permits.
-    off=>none, exit_only=>SELL, entry_flb=>both (hosted entry), full=>both."""
-    if mode in ("full", "entry_flb"):
+    off=>none, exit_only=>SELL, entry_allowlisted=>both (delegated-mandate entry), full=>both."""
+    if mode in ("full", "entry_allowlisted"):
         return True
     if mode == "exit_only":
         return side == "SELL"
@@ -705,17 +706,17 @@ def load_arm_state(
 ) -> dict[str, Any]:
     """Validate the single-source arm-state control file.
 
-    The bridge writes this file on an owner frontend click; MarketFlow code only ever
-    READS it and never self-arms. It is the single authority for dry_run vs live
+    The operator writes this file, by hand or through their own tooling; MarketFlow
+    code only ever READS it and never self-arms. It is the single authority for dry_run vs live
     + mode. Valid (armed) only when the file exists, parses, was written_by the
     bridge, carries the exact live_ack phrase, has mode in {exit_only, full},
     armed is true, and is not expired. Caps may only TIGHTEN: a cap that EXCEEDS
     the code cap is treated as tampering and force-disarms (caps only move down).
 
-    Guardian hosted tenants pass their own writer/ack
+    Guardian mandates pass their own writer/ack
     expectations plus expected_tenant, which additionally binds the file's
     tenant_id — a tenant arm file copied into another tenant's namespace can
-    never arm it. Defaults keep the single-tenant bridge semantics bit-for-bit.
+    never arm it. Defaults keep the single-account semantics bit-for-bit.
     """
     state: dict[str, Any] = {
         "arm_state_file": arm_state_file,
@@ -780,12 +781,12 @@ def load_arm_state(
     state["budget_epoch_explicit"] = bool(budget_epoch)
     state["budget_epoch_time_ok"] = budget_epoch_time_ok
 
-    # A cap may go up to the CEILING (not the default weld); above it = tampering
-    # -> disarm. For default / multi-tenant caps the ceiling EQUALS the weld
-    # ($25/$5), so this is identical to the old behavior. For the owner path the
-    # ceiling is higher, so the owner's bridge-written caps up to the ceiling are
-    # honored as effective instead of being flagged as tamper. The initial
-    # effective value is caps.max (the fallback weld) so a missing cap field never
+    # A cap may go up to the CEILING (not the default); above it = tampering
+    # -> disarm. For default / multi-tenant caps the ceiling EQUALS the default
+    # (the default fractions), so this is identical to the old behavior. For the operator path the
+    # ceiling is higher, so operator-written caps up to the ceiling are honored as
+    # effective instead of being flagged as tamper. The initial
+    # effective value is caps.max (the fallback default) so a missing cap field never
     # inherits the raised ceiling.
     cap_total = to_float(arm.get("max_total_deploy_usd"))
     cap_per_trade = to_float(arm.get("max_per_trade_usd"))
@@ -821,8 +822,8 @@ def load_arm_state(
     # This matches the safety posture already used elsewhere; it is not a new
     # invention:
     #   * the two separate gates GUARDIAN_LIVE_ENABLED / GUARDIAN_ENTRY_ENABLED
-    #     (see store.py:
-    #     "a single gate would force a choice between keeps buying and cannot sell")
+    #     (marketflow/guardian/store.py, entry_enabled: a single gate would force a
+    #     choice between "keeps buying" and "cannot sell")
     #   * the global HALT ("BUY disabled but SELL exits remain enabled")
     #
     # **Backward compatibility is a hard requirement.** With no `expires_at`,
@@ -1528,9 +1529,8 @@ def fill_from_receipt(receipt: dict[str, Any], intent: OrderIntent) -> dict[str,
     `making_amount=0`, `taking_amount=0`, `trade_ids=[]` — an order RESTING on the
     book, nothing traded. `filled` used to include `"live"`, so every resting
     maker order was recorded as a fill with zero filled shares, and any fill rate
-    computed off this ledger read 100% for a path whose real rate was different
-    (260727: 14 FLB post-only BUYs all logged filled; the account's public trade
-    history showed 9). Monetary paths were never affected — they read
+    computed off this ledger read 100% for a path whose real rate was lower.
+    Monetary paths were never affected — they read
     `filled_notional_usd`, which was correctly 0 — but every human and every
     downstream report reading `filled` was being told the wrong thing.
 
@@ -1571,7 +1571,7 @@ def fill_from_receipt(receipt: dict[str, Any], intent: OrderIntent) -> dict[str,
 
 
 def confirm_fill(client: Any, *, order_id: str, market_id: str | None = None, token_id: str | None = None) -> dict[str, Any]:
-    """Read fills back via the read-only SDK methods (reuse of the Rail B read leg)."""
+    """Read fills back via the read-only SDK methods."""
     result: dict[str, Any] = {"order_id": order_id, "read_only": True}
     try:
         order = client.get_order(order_id=order_id)
@@ -1788,7 +1788,7 @@ def account_realized_flows(
     offset = 0
     for _page in range(max_pages):
         url = f"{DATA_API_BASE}/activity?user={funder_address}&limit=500&offset={offset}"
-        req = urllib.request.Request(url, headers={"User-Agent": "marketflow-s1-drawdown"})
+        req = urllib.request.Request(url, headers={"User-Agent": "marketflow-drawdown"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
             with opener.open(req, timeout=timeout) as resp:
@@ -1915,15 +1915,11 @@ def cancel_order(client: Any, *, order_id: str) -> dict[str, Any]:
     }
 
 
+# Operator enclave signing (optional). With the gate file present in the secret
+# directory, the operator's own account signs through side-bound agents in the
+# operator's own user-root sub-organization instead of the local key.
 OWNER_TURNKEY_GATE_FILE = "OWNER_TURNKEY_ENABLED"
-OWNER_TURNKEY_MODE_FILE = "turnkey_owner_mode.txt"
-OWNER_TURNKEY_LEGACY_REFS = {
-    "turnkey_organization_id": "turnkey_org_id.txt",
-    "turnkey_signer_address": "turnkey_signer_address.txt",
-    "turnkey_agent_public_key": "turnkey_agent_public_key.txt",
-    "turnkey_agent_private_key": "turnkey_agent_private_key.txt",
-}
-OWNER_TURNKEY_USER_ROOT_REFS = {
+OWNER_TURNKEY_REFS = {
     "turnkey_organization_id": "turnkey_org_id.txt",
     "turnkey_signer_address": "turnkey_signer_address.txt",
     "turnkey_entry_agent_public_key": "turnkey_entry_agent_public_key.txt",
@@ -1934,25 +1930,18 @@ OWNER_TURNKEY_USER_ROOT_REFS = {
 
 
 def owner_turnkey_material(secret_dir: str) -> dict[str, str] | None:
-    """Load this stack's Turnkey agent material, or None to stay on the local key.
+    """Load the operator's enclave agent material, or None to stay on the local key.
 
-    Opt-in twice over: every ref must exist AND the gate file must be present. The
-    gate is what makes rollback a one-step operation — remove it and the next
-    build goes straight back to the on-disk key, no code change, no redeploy.
+    Opt-in twice over: every ref must exist AND the gate file must be present.
+    This is the operator's own account and key, so removing the gate returns the
+    next build to the operator's local key with no code change. Delegated
+    mandates never come through here: they sign only through
+    marketflow/guardian, with no local-key path at all.
     """
     if not os.path.exists(os.path.join(secret_dir, OWNER_TURNKEY_GATE_FILE)):
         return None
-    mode_path = os.path.join(secret_dir, OWNER_TURNKEY_MODE_FILE)
-    mode = read_secret_ref(secret_dir, OWNER_TURNKEY_MODE_FILE).strip().lower() if os.path.exists(mode_path) else "legacy"
-    if mode not in {"legacy", "user_root"}:
-        raise ExecutionError(
-            f"unsupported owner Turnkey mode {mode!r}; expected legacy or user_root"
-        )
-    refs = OWNER_TURNKEY_USER_ROOT_REFS if mode == "user_root" else OWNER_TURNKEY_LEGACY_REFS
-    material: dict[str, str] = {
-        "key_backend": "turnkey_user_root" if mode == "user_root" else "turnkey",
-    }
-    for key, filename in refs.items():
+    material: dict[str, str] = {"key_backend": "turnkey_user_root"}
+    for key, filename in OWNER_TURNKEY_REFS.items():
         path = os.path.join(secret_dir, filename)
         if not os.path.exists(path):
             # Gate on but material incomplete: refuse rather than silently signing
@@ -1970,36 +1959,30 @@ def build_secure_client(
     *,
     secret_dir: str = DEFAULT_SECRET_DIR,
     side: str | None = None,
-) -> Any:  # pragma: no cover - live SDK only.
-    try:
+) -> Any:
+    turnkey_material = owner_turnkey_material(secret_dir)
+    if turnkey_material is not None:
+        # Same wallet, same address, same Deposit Wallet -- only the custody of the
+        # signing key changes. The agents' policies allow CLOB orders on one side
+        # and nothing else, so a compromise of this box can trade the account but
+        # cannot transfer out of it (marketflow/guardian/turnkey.py).
+        from marketflow.guardian import turnkey as gturnkey
+
+        selected_side = str(side or "").strip().upper()
+        if selected_side not in {"BUY", "SELL"}:
+            raise ExecutionError("operator enclave client requires an explicit BUY or SELL side")
+        return gturnkey.build_turnkey_client(
+            {**secrets, **turnkey_material},
+            secret_dir=secret_dir,
+            side=selected_side,
+        )
+    try:  # pragma: no cover - live SDK only.
         from polymarket import ApiKeyCreds, SecureClient
     except Exception as exc:
         raise ExecutionError(
             "polymarket-client SDK is unavailable in this Python environment; "
             "run with python3"
         ) from exc
-
-    turnkey_material = owner_turnkey_material(secret_dir)
-    if turnkey_material is not None:
-        # Same wallet, same address, same Deposit Wallet — only the custody of the
-        # signing key changes. The enclave policy allows CLOB orders under a
-        # notional cap and nothing else, so a compromise of this box can trade the
-        # account but cannot transfer out of it (marketflow/guardian/turnkey.py, ).
-        guardian_dir = os.path.join(REPO_ROOT, "guardian")
-        import turnkey as gturnkey  # type: ignore
-
-        backend = str(turnkey_material["key_backend"])
-        if backend == gturnkey.KEY_BACKEND_TURNKEY_USER_ROOT:
-            selected_side = str(side or "").strip().upper()
-            if selected_side not in {"BUY", "SELL"}:
-                raise ExecutionError("owner user-root Turnkey client requires an explicit BUY or SELL side")
-        else:
-            selected_side = None
-        return gturnkey.build_turnkey_client(
-            {**secrets, **turnkey_material},
-            secret_dir=secret_dir,
-            side=selected_side,
-        )
     credentials = ApiKeyCreds(
         key=secrets["api_key"],
         secret=secrets["api_secret"],
@@ -2029,9 +2012,9 @@ def execute_order(
     build+sign and submit.
 
     `realized_flows` is a SEALING seam for selftest only: the budget check
-    otherwise reads the owner's real account flows, so a real trading day silently
-    changes selftest outcomes (260725: a live loss tripped the drawdown fuse inside
-    an unrelated ledger-accounting check). Live callers never pass it.
+    otherwise reads the account's real flows, so account activity would silently
+    change self-test outcomes — a drawdown in the account could trip the fuse inside
+    an unrelated ledger-accounting check. Live callers never pass it.
 
     Only reached when plan["will_execute_live"] is True (the fuse gate already
     passed in plan_order). The wallet_type assertion here is the last brake
@@ -2153,7 +2136,7 @@ def human_summary(record: dict[str, Any]) -> str:
         "",
         "Dry_run by default. Live requires an armed arm-state (mode permits side) + caps + no kill switch. "
         "Exit-first; no naked short; no secret printed or ledgered; "
-        "no crypto paper.py / live kernel / state.mx.",
+        "no coupling to any other runtime's state.",
         "",
     ]
     return "\n".join(lines)
@@ -2226,9 +2209,9 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     intent = intent_from_config(config)
-    # Owner-path callers must build caps the same way the daemon's owner path does
-    # (owner_fuse_caps), not from bare FuseCaps: the bare defaults sit BELOW the
-    # owner ceiling, so an arm-state whose operational caps exceed them would be
+    # Operator-path callers must build caps the same way the daemon's operator path
+    # does (owner_fuse_caps), not from bare FuseCaps: the bare defaults sit BELOW the
+    # operator ceiling, so an arm-state whose operational caps exceed them would be
     # judged cap_tamper -> arm void -> even exits frozen.
     caps = owner_fuse_caps(
         max_total_deploy_usd=args.max_total_deploy_usd,
@@ -2355,7 +2338,7 @@ class _FakeTrade:
     side = "BUY"
     price = Decimal("1.0")
     size = Decimal("1.0")
-    matched_at = "2026-06-18T00:00:00Z"
+    matched_at = "2026-01-01T00:00:00Z"
     transaction_hash = "0x" + "e" * 64
     maker_orders = ()
 
@@ -2417,11 +2400,11 @@ class _FakeClient:
 def selftest() -> dict[str, Any]:
     global DEFAULT_GLOBAL_HALT_FILE
     checks: dict[str, bool] = {}
-    # Seal the account-flow read (260725). Without this, execute_order's budget
-    # check queries the owner's REAL data-api flows, so a real trading day changes
-    # unrelated selftest outcomes — a live loss tripped the drawdown fuse inside
-    # the ledger-accounting check. Tests that deliberately exercise drawdown/budget
-    # pass their own flows to pre_live_account_budget_check directly.
+    # Seal the account-flow read. Without this, execute_order's budget check would
+    # query a real account's data-api flows, and unrelated selftest outcomes (the
+    # ledger-accounting check, for one) would depend on whatever that account did
+    # that day. Tests that deliberately exercise drawdown/budget pass their own
+    # flows to pre_live_account_budget_check directly.
     _SEALED_FLOWS = {"buy_usd": 0.0, "sell_usd": 0.0, "redeem_usd": 0.0}
     os.makedirs(OUT_DIR, exist_ok=True)
     tmp_ledger = os.path.join(OUT_DIR, "selftest_ledger.jsonl")
@@ -2445,7 +2428,7 @@ def selftest() -> dict[str, Any]:
             "live_ack": phrase,
             "written_by": writer,
             "budget_epoch": "selftest-epoch",
-            "budget_epoch_started_at": "2026-06-19T00:00:00Z",
+            "budget_epoch_started_at": "2026-01-02T00:00:00Z",
         }
         if total is not None:
             obj["max_total_deploy_usd"] = total
@@ -2468,8 +2451,8 @@ def selftest() -> dict[str, Any]:
         "place_limit_order" in FORBIDDEN_SDK_METHODS and "place_market_order" in FORBIDDEN_SDK_METHODS
     )
 
-    # Owner migration: the gate replaces (rather than supplements) the raw key,
-    # requires both side-specific agents, and fails closed on partial material.
+    # Operator enclave signing: the gate replaces (rather than supplements) the raw
+    # key, requires both side-specific agents, and fails closed on partial material.
     owner_secret_test_dir = tempfile.mkdtemp(prefix="owner-turnkey-selftest-", dir=OUT_DIR)
     try:
         base_refs = {
@@ -2477,7 +2460,6 @@ def selftest() -> dict[str, Any]:
             "polymarket_api_secret.txt": "selftest-api-secret",
             "polymarket_passphrase.txt": "selftest-passphrase",
             "polymarket_funder_address.txt": "0x" + "a" * 40,
-            OWNER_TURNKEY_MODE_FILE: "user_root",
             "turnkey_org_id.txt": "selftest-org",
             "turnkey_signer_address.txt": "0x" + "b" * 40,
             "turnkey_entry_agent_public_key.txt": "entry-public",
@@ -2497,6 +2479,15 @@ def selftest() -> dict[str, Any]:
             and owner_material.get("turnkey_entry_agent_private_key") == "entry-private"
             and owner_material.get("turnkey_exit_agent_private_key") == "exit-private"
         )
+        # The enclave branch resolves its signer module and demands a side before
+        # anything touches the SDK or the network.
+        try:
+            build_secure_client(owner_loaded, secret_dir=owner_secret_test_dir, side=None)
+            checks["owner_turnkey_client_requires_side"] = False
+        except ExecutionError as exc:
+            checks["owner_turnkey_client_requires_side"] = "explicit BUY or SELL side" in str(exc)
+        except Exception:  # noqa: BLE001 - an import failure here is the bug this pins
+            checks["owner_turnkey_client_requires_side"] = False
         os.remove(os.path.join(owner_secret_test_dir, "turnkey_exit_agent_private_key.txt"))
         try:
             load_polymarket_secret_refs(owner_secret_test_dir)
@@ -2506,7 +2497,7 @@ def selftest() -> dict[str, Any]:
     finally:
         shutil.rmtree(owner_secret_test_dir)
 
-    # Delegated-mandate caps stay WELDED: a cap above the module default clamps
+    # Delegated-mandate caps stay bound: a cap above the module default clamps
     # DOWN to the default regardless of caller input. Sized off the constants so
     # the assertion holds at any book size.
     raised = FuseCaps(max_total_deploy_usd=DEFAULT_MAX_TOTAL_DEPLOY_USD * 10,
@@ -2521,7 +2512,7 @@ def selftest() -> dict[str, Any]:
     checks["caps_weld_allows_tighten"] = (
         tighter.max_total_deploy_usd == _tight_total and tighter.max_per_trade_usd == _tight_per_trade
     )
-    # Owner caps (owner single-tenant) may be RAISED above the default weld, up to
+    # Operator caps (single-account) may be RAISED above the default, up to
     # the fat-finger ceiling; a stray extra zero past the ceiling still clamps.
     _raise_total = DEFAULT_MAX_TOTAL_DEPLOY_USD * 2
     _raise_per_trade = DEFAULT_MAX_PER_TRADE_USD * 2
@@ -2538,11 +2529,11 @@ def selftest() -> dict[str, Any]:
         and owner_fat_finger.max_per_trade_usd == OWNER_CAP_CEILING_PER_TRADE_USD
     )
     # Non-custodial invariant: the principal's ceiling must NOT leak into the
-    # default weld — a plain FuseCaps() (what every delegated mandate gets on the
-    # S1 path) is unaffected by it.
-    tenant_still_welded = FuseCaps(max_total_deploy_usd=OWNER_CAP_CEILING_TOTAL_USD * 10)
-    checks["tenant_default_still_welded"] = (
-        tenant_still_welded.max_total_deploy_usd == DEFAULT_MAX_TOTAL_DEPLOY_USD
+    # default — a plain FuseCaps(), which is what every delegated mandate gets on
+    # this path, is unaffected by it.
+    tenant_still_bound = FuseCaps(max_total_deploy_usd=OWNER_CAP_CEILING_TOTAL_USD * 10)
+    checks["tenant_default_still_bound"] = (
+        tenant_still_bound.max_total_deploy_usd == DEFAULT_MAX_TOTAL_DEPLOY_USD
     )
 
     # mask
@@ -2573,9 +2564,11 @@ def selftest() -> dict[str, Any]:
 
         os.environ.pop("MARKETFLOW_POLYMARKET_PROXY_URL", None)
         os.environ.pop("POLYMARKET_HTTP_PROXY", None)
-        os.environ["http_proxy"] = "http://launchd-proxy.example:9999"
-        checks["launchd_global_proxy_env_ignored"] = (
-            polymarket_sdk_proxy_url(None) == "http://127.0.0.1:15237"
+        os.environ["http_proxy"] = "http://global-proxy.example:9999"
+        # A process-wide proxy variable is ignored, and with nothing configured
+        # for the venue SDK the connection is direct.
+        checks["global_proxy_env_ignored_default_direct"] = (
+            polymarket_sdk_proxy_url(None) is None
         )
     finally:
         for name, value in saved_proxy_env.items():
@@ -2594,7 +2587,7 @@ def selftest() -> dict[str, Any]:
     checks["exit_passes_fuses_dry_run"] = plan_no_ack["would_place"] is True
 
     # valid armed arm-state (mode full) -> live plan clears (still dry_run if not requested_live)
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
     plan_live = plan_order(
         exit_intent, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
@@ -2606,7 +2599,7 @@ def selftest() -> dict[str, Any]:
     )
     checks["default_is_dry_run"] = plan_dry_default["will_execute_live"] is False
 
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
     with open(tmp_ack_valid, encoding="utf-8") as f:
         no_epoch = json.load(f)
     no_epoch.pop("budget_epoch", None)
@@ -2616,7 +2609,7 @@ def selftest() -> dict[str, Any]:
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )
     checks["budget_epoch_required_for_live"] = plan_no_epoch["will_execute_live"] is False
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
     # Fuse 2: kill switch (file) forces dry_run even with valid ack + --live
     ensure_parent(tmp_kill)
@@ -2694,7 +2687,7 @@ def selftest() -> dict[str, Any]:
     checks["ack_budget_tightens_total_cap"] = plan_tight["would_place"] is False and any(
         "total deploy cap" in r for r in plan_tight["fuses"]["refusals"]
     )
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
     # Fuse 4: no naked short (sell more than held)
     over_sell = OrderIntent(action="EXIT", side="SELL", token_id="x", order_kind="market", size=20.0, held_shares=10.0, min_price=0.01)
@@ -2774,7 +2767,7 @@ def selftest() -> dict[str, Any]:
     )
 
     # Fuse 3 (mode-permits): exit_only allows SELL but NOT BUY; full allows BUY
-    _write_arm(tmp_ack_valid, mode="exit_only", total=25.0)
+    _write_arm(tmp_ack_valid, mode="exit_only", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
     sell_exit_only = plan_order(
         exit_intent, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
@@ -2785,43 +2778,43 @@ def selftest() -> dict[str, Any]:
     )
     checks["exit_only_allows_sell"] = sell_exit_only["will_execute_live"] is True
     checks["exit_only_blocks_buy"] = buy_exit_only["will_execute_live"] is False
-    # 260725 hosted-tenant entry mode: permits both sides like full, but is a
+    # delegated-mandate entry mode: permits both sides like full, but is a
     # distinct named capability. An unknown/garbage mode must still fail closed.
-    _write_arm(tmp_ack_valid, mode="entry_flb", total=25.0)
-    checks["entry_flb_allows_buy"] = plan_order(
+    _write_arm(tmp_ack_valid, mode="entry_allowlisted", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
+    checks["entry_allowlisted_allows_buy"] = plan_order(
         small_buy, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )["will_execute_live"] is True
-    checks["entry_flb_allows_sell"] = plan_order(
+    checks["entry_allowlisted_allows_sell"] = plan_order(
         exit_intent, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )["will_execute_live"] is True
-    _write_arm(tmp_ack_valid, mode="entry_anything", total=25.0)
+    _write_arm(tmp_ack_valid, mode="entry_anything", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
     checks["unknown_arm_mode_fails_closed"] = plan_order(
         small_buy, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )["will_execute_live"] is False
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
-    # arm-state written_by != bridge (e.g. self-armed by marketflow) -> refused
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, writer="marketflow")
+    # arm-state written_by != operator (for example self-armed by software) -> refused
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, writer="marketflow")
     self_armed = plan_order(
         exit_intent, requested_live=True, caps=caps, kill_file=tmp_kill,
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )
     checks["self_armed_refused"] = self_armed["will_execute_live"] is False and self_armed["fuses"]["arm_valid"] is False
 
-    # Guardian hosted-tenant arm semantics: per-tenant writer/
+    # Guardian mandate arm semantics: per-tenant writer/
     # ack/tenant expectations. A guardian-written arm file must NOT arm the
-    # default (bridge) path, and vice versa; tenant_id binds the file to its dir.
+    # default (operator) path, and vice versa; tenant_id binds the file to its dir.
     g_ack = "GUARDIAN_TENANT_APPROVES_AUTO_EXIT"
     write_json(tmp_ack_valid, {
         "schema_version": ARM_STATE_SCHEMA_VERSION, "armed": True, "mode": "exit_only",
         "live_ack": g_ack, "written_by": "guardian_service", "tenant_id": "t1",
-        "budget_epoch": "g-epoch", "budget_epoch_started_at": "2026-06-19T00:00:00Z",
+        "budget_epoch": "g-epoch", "budget_epoch_started_at": "2026-01-02T00:00:00Z",
     })
     g_on_default = load_arm_state(tmp_ack_valid, caps)
-    checks["guardian_arm_never_arms_bridge_path"] = g_on_default["valid"] is False
+    checks["guardian_arm_never_arms_operator_path"] = g_on_default["valid"] is False
     g_ok = load_arm_state(tmp_ack_valid, caps, expected_writer="guardian_service",
                           expected_ack=g_ack, expected_tenant="t1")
     checks["guardian_arm_valid_with_expectations"] = g_ok["valid"] is True and g_ok["mode"] == "exit_only"
@@ -2834,10 +2827,10 @@ def selftest() -> dict[str, Any]:
         arm_expected_writer="guardian_service", arm_expected_ack=g_ack, arm_expected_tenant="t1",
     )
     checks["guardian_exit_only_sell_live_plans"] = g_sell["will_execute_live"] is True
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
-    bridge_on_guardian = load_arm_state(tmp_ack_valid, caps, expected_writer="guardian_service",
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
+    operator_on_guardian = load_arm_state(tmp_ack_valid, caps, expected_writer="guardian_service",
                                         expected_ack=g_ack, expected_tenant="t1")
-    checks["bridge_arm_never_arms_guardian_tenant"] = bridge_on_guardian["valid"] is False
+    checks["operator_arm_never_arms_guardian_tenant"] = operator_on_guardian["valid"] is False
 
     # cap-tamper: a cap that EXCEEDS the code cap force-disarms (caps only go down)
     _write_arm(tmp_ack_valid, mode="full", total=1000000.0)
@@ -2849,7 +2842,7 @@ def selftest() -> dict[str, Any]:
         tampered["will_execute_live"] is False
         and tampered["fuses"]["checks"]["arm_state"]["cap_tamper"] is True
     )
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
     # mode "off" / disarmed -> dry_run
     _write_arm(tmp_ack_valid, armed=False, mode="off")
@@ -2858,7 +2851,7 @@ def selftest() -> dict[str, Any]:
         arm_state_file=tmp_ack_valid, ledger_path=tmp_ledger,
     )
     checks["disarmed_forces_dry_run"] = disarmed["will_execute_live"] is False
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
     # Expiry semantics: expired downgrades to exit_only rather than stopping
     # everything, because stopping SELL turns an open position into an unmanaged
@@ -2869,19 +2862,19 @@ def selftest() -> dict[str, Any]:
     _future = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat(
         timespec="seconds").replace("+00:00", "Z")
 
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)          # no expires_at
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)          # no expires_at
     _no_exp = load_arm_state(tmp_ack_valid, caps)
     checks["no_expiry_field_behaves_exactly_as_before"] = (
         _no_exp["valid"] is True and _no_exp["mode"] == "full"
         and _no_exp["expired_downgraded"] is False)
 
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, expires_at=_future)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, expires_at=_future)
     _fresh = load_arm_state(tmp_ack_valid, caps)
     checks["unexpired_authorisation_keeps_full"] = (
         _fresh["valid"] is True and _fresh["mode"] == "full"
         and _fresh["expired_downgraded"] is False)
 
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, expires_at=_past)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, expires_at=_past)
     _exp = load_arm_state(tmp_ack_valid, caps)
     checks["expired_downgrades_to_exit_only"] = (
         _exp["valid"] is True and _exp["mode"] == "exit_only"
@@ -2898,20 +2891,20 @@ def selftest() -> dict[str, Any]:
         _exp_tamper["valid"] is False and _exp_tamper["mode"] == "off"
         and _exp_tamper["expired_downgraded"] is False)
 
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, writer="not_bridge", expires_at=_past)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, writer="not_bridge", expires_at=_past)
     _exp_writer = load_arm_state(tmp_ack_valid, caps)
     checks["expired_plus_wrong_writer_still_fully_disarms"] = _exp_writer["valid"] is False
 
     # An unparseable expiry is still treated as expired (fail closed), but takes
     # the downgrade rather than the full stop, so exits survive.
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, expires_at="not-a-timestamp")
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, expires_at="not-a-timestamp")
     _bad_exp = load_arm_state(tmp_ack_valid, caps)
     checks["unparseable_expiry_downgrades_not_arms_entry"] = (
         _bad_exp["mode"] == "exit_only" and _bad_exp["expired_downgraded"] is True)
 
     # Under an expired arm a BUY plan must actually be refused, checked
     # end-to-end through plan_order rather than only at load_arm_state.
-    _write_arm(tmp_ack_valid, mode="full", total=25.0, expires_at=_past)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD, expires_at=_past)
     _ttl_buy_intent = build_entry_intent(
         token_id="111222333", order_kind="limit", price=0.5, size=2.0)
     _exp_buy_plan = plan_order(
@@ -2924,7 +2917,7 @@ def selftest() -> dict[str, Any]:
     )
     checks["expired_buy_plan_refused_end_to_end"] = _exp_buy_plan["will_execute_live"] is False
     checks["expired_sell_plan_still_live_end_to_end"] = _exp_sell_plan["will_execute_live"] is True
-    _write_arm(tmp_ack_valid, mode="full", total=25.0)
+    _write_arm(tmp_ack_valid, mode="full", total=DEFAULT_MAX_TOTAL_DEPLOY_USD)
 
     # read-only fill estimate: SELL sweeps bids
     book = _FakeBook(bids=[(0.60, 6.0), (0.58, 6.0)], asks=[(0.63, 5.0)])
@@ -3107,7 +3100,7 @@ def selftest() -> dict[str, Any]:
         "intent": {
             "side": "BUY",
             "market_id": "0xmarket",
-            "market_slug": "fifwc-bra-hai-2026-06-19-spread-home-2pt5",
+            "market_slug": "selftest-open-market",
             "token_id": "old-token",
             "outcome": "YES",
             "size": 2.0,
@@ -3120,7 +3113,7 @@ def selftest() -> dict[str, Any]:
         "intent": {
             "side": "BUY",
             "market_id": "0xmarket",
-            "market_slug": "fifwc-bra-hai-2026-06-19-spread-home-2pt5",
+            "market_slug": "selftest-open-market",
             "token_id": "old-token",
             "outcome": "YES",
             "size": 2.0,
@@ -3136,7 +3129,7 @@ def selftest() -> dict[str, Any]:
         price=0.5,
         size=2.0,
         market_id="0xmarket",
-        market_slug="fifwc-bra-hai-2026-06-19-spread-home-2pt5",
+        market_slug="selftest-open-market",
         outcome="YES",
         idempotency_key="fresh_key_same_market",
     )
@@ -3153,7 +3146,7 @@ def selftest() -> dict[str, Any]:
         "intent": {
             "side": "SELL",
             "market_id": "0xmarket",
-            "market_slug": "fifwc-bra-hai-2026-06-19-spread-home-2pt5",
+            "market_slug": "selftest-open-market",
             "token_id": "old-token",
             "outcome": "YES",
             "size": 2.0,
@@ -3176,7 +3169,7 @@ def selftest() -> dict[str, Any]:
         side = "BUY"
         price = Decimal("0.5")
         size = Decimal("1.0")
-        matched_at = "2026-06-19T00:01:00Z"
+        matched_at = "2026-01-02T00:01:00Z"
         transaction_hash = "0x" + "f" * 64
         maker_orders = ()
 
@@ -3216,7 +3209,7 @@ def selftest() -> dict[str, Any]:
         side = "BUY"
         price = Decimal("0.5")
         size = Decimal("1.0")
-        matched_at = "2026-06-19T00:01:00Z"
+        matched_at = "2026-01-02T00:01:00Z"
         transaction_hash = None
         maker_orders = ()
 
@@ -3261,13 +3254,17 @@ def selftest() -> dict[str, Any]:
         },
     )
 
+    # Cumulative buys past the total cap, every one of them settled and redeemed
+    # at a profit: settled exposure must not keep consuming the budget.
+    _cycled_buy_usd = caps.max_total_deploy_usd * 1.2
+
     class _CycledTrade:
         id = "tr-cycled"
         taker_order_id = "ord-cycled"
         side = "BUY"
         price = Decimal("0.8")
-        size = Decimal("30.0")  # $24 cumulative buy fills, all settled+redeemed
-        matched_at = "2026-06-19T00:01:00Z"
+        size = Decimal(str(round(_cycled_buy_usd / 0.8, 6)))
+        matched_at = "2026-01-02T00:01:00Z"
         transaction_hash = None
         maker_orders = ()
 
@@ -3281,10 +3278,11 @@ def selftest() -> dict[str, Any]:
             buy_plan,
             ledger_path=compound_ledger,
             halt_file=tmp_halt,
-            realized_flows={"buy_usd": 24.0, "sell_usd": 0.0, "redeem_usd": 30.0},
+            realized_flows={"buy_usd": _cycled_buy_usd, "sell_usd": 0.0,
+                            "redeem_usd": _cycled_buy_usd * 1.25},
         )
         compound_ok = (
-            compound_budget["deployed_buy_fills_usd"] > 20.0
+            compound_budget["deployed_buy_fills_usd"] > caps.max_total_deploy_usd
             and compound_budget["realized_loss_usd"] < 0
             and not os.path.exists(tmp_halt)
         )

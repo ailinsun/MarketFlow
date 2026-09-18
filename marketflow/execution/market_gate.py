@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Polymarket market-quality gate — longshot / probability-band hard filters
-plus configurable resolution / edge advisory policy for autonomous entries.
+"""Market-quality gate: which markets an automated entry may buy at all.
 
-Single source of truth for "should MarketFlow be allowed to BUY into this market at
-all?", independent of the capital fuses (caps / kill / arm-state, which live in
-polymarket_execution). Pure functions: no network, no SDK, no secrets — so the
-chat enqueue tool, the daemon entry path, and any packet builder all share the
-exact same thresholds.
+Pure functions — no network, no SDK, no secrets — so every entry path shares one
+set of thresholds. It is independent of the capital fuses (caps, kill, arm state),
+which live in the order module and still apply on top: an order can clear every one
+of those fuses and still be a bad bet at the price it would be placed at.
 
-Why this exists: an autonomous entry can pass every capital fuse ($1 cap, FOK,
-idempotency, arm-state) and still be a terrible bet — a sub-$0.15 longshot
-(retail loses >60% on <15c contracts; the South Africa @0.08 loss was exactly
-this), an out-of-band price, or a position with no real edge over the executable
-price. Longshot / probability-band rejects happen before any sign/POST.
-Resolution and edge/model-probability are advisory by default and become hard
-only when owner config asks for that. The capital fuses still apply on top.
+Two kinds of test, with different standing:
+
+  * The probability band is a hard filter applied before any signing. Its low end
+    encodes the favourite-longshot bias; its high end is a risk-shape default. See
+    the thresholds below for what each is, and is not, evidence of.
+  * Resolution cleanliness and after-cost edge are advisory by default and become
+    hard only when configured to. The sizer is the component that owns the edge
+    decision, so this gate reports rather than duplicates it.
 """
 from __future__ import annotations
 
@@ -38,27 +37,37 @@ PRICE_EXPRESSION_SCHEMA_VERSION = "polymarket-price-expression-gate-v0.1"
 # decision "at which price should this alpha be expressed" reads the relative
 # figure while the refusal computes the absolute one. Mixing the units is wrong by
 # an order of magnitude as px approaches zero.
-FEE_RATE_FALLBACK = 0.05      # fallback when per-market feeSchedule.rate is unreadable;
-                              # the overwhelming majority of markets use this rate
-BUY_PRICE_FLOOR = 0.10        # Default no-go band. Measured over a full tape, this band
-                              # is a little over 1% of deployed capital and lost more
-                              # than the entire sample's net loss; excluding it leaves
-                              # the remaining 98.6% break-even after fees. A gate, not
-                              # a continuous penalty: below 2c the bias disappears, so
-                              # "cheaper is worse" would be false. The damage is in the
-                              # 2-5 cent band specifically.
+# Used only to *estimate* the fee when a market's own rate cannot be read, so a dry
+# run can still price an order. It never authorizes a live taker order: fee rates are
+# set per market and differ between them, and a guessed rate can understate the cost
+# of the very order being placed. See FEE_RATE_UNKNOWN below.
+FEE_RATE_FALLBACK = 0.05
+# Price floor for any BUY. In the frozen zero-sum ledger shipped with this repository
+# (data/zero_sum_ledger), takers buying below 5 cents lost 54.6% of notional *before*
+# fees, with fees adding 4.9%; between 5 and 10 cents they lost 47.8% gross against
+# 4.6% of fees. The loss is the favourite-longshot bias — cheap contracts are
+# overpriced — not the fee schedule. It is a gate rather than a continuous penalty.
+BUY_PRICE_FLOOR = 0.10
 
 PRICE_EXPRESSION_REJECT_CODES = (
+    "FEE_RATE_UNKNOWN",
     "BAD_ENTRY_PRICE",
     "BUY_PRICE_FLOOR_REJECT",
     "NEGATIVE_EDGE_AFTER_FEE",
 )
 
-# --- thresholds: single source of truth (cited in the Rail E scorecard) ------
+# --- probability band: single source of truth ------------------------------
 # All bands are on the market-implied probability of the side being BOUGHT,
 # which equals that side's executable ask price.
-LONGSHOT_REJECT_LOW = 0.15    # below: deep longshot (retail structurally loses on <15c; the SA @0.08 loss)
-LONGSHOT_REJECT_HIGH = 0.85   # above: near-certain side priced >85c — the OTHER side is the deep longshot
+# Low end: the favourite-longshot bias again. In the frozen ledger, gross taker returns
+# are -15.1% for 10-20 cent contracts and turn roughly flat only above 20 cents.
+LONGSHOT_REJECT_LOW = 0.15
+# High end: a risk-shape default, NOT an edge finding. Above 0.85 the upside is at most
+# 15 cents per dollar while a single adverse resolution loses the stake, so the
+# default refuses that shape. The frozen ledger does not support it as an edge
+# result — takers buying between 0.80 and 0.98 were positive gross in that sample —
+# which is exactly why it is configurable rather than fixed.
+LONGSHOT_REJECT_HIGH = 0.85
 # Inner band collapsed onto the longshot guard. The
 # old [0.30,0.70] "only near-coinflips" band was a hand-picked aesthetic constant
 # that rejected every favorite/underdog and ~90% of sports markets before any bet.
@@ -224,6 +233,7 @@ def price_expression_gate(
     price_floor: float = BUY_PRICE_FLOOR,
     floor_override_reason: Any = None,
     enforce: bool = True,
+    live: bool = False,
 ) -> dict[str, Any]:
     """Price-expression gate — does a BUY at *this* price still have positive
     expectation after fees?
@@ -240,9 +250,13 @@ def price_expression_gate(
     authorization stays APPROVED and the verdicts land in `would_reject_codes`.
     Use it to quantify the impact before switching a gate on.
 
-    `fee_rate` must be the per-market `feeSchedule.rate`. When it is None the
-    fallback is used and `fee_rate_source` is marked as such — a per-market rate is
-    required, and a hardcoded constant is not an acceptable substitute.
+    `fee_rate` must be the per-market `feeSchedule.rate`. When it is unknown the
+    fallback estimate is used and `fee_rate_source` says so.
+
+    A live taker order at an unknown fee rate is refused with FEE_RATE_UNKNOWN, and
+    that refusal binds even in shadow mode: it is a safety refusal, not an
+    experiment. A maker (post-only) order pays no taker fee, so an unknown rate
+    cannot understate its cost and it is not refused for this reason.
     """
     reject: list[str] = []
     px = _to_float(entry_price)
@@ -253,6 +267,8 @@ def price_expression_gate(
     if rate is None or rate < 0:
         rate = FEE_RATE_FALLBACK
         fee_rate_source = "fallback"
+    safety_reject = (["FEE_RATE_UNKNOWN"]
+                     if (fee_rate_source == "fallback" and live and not maker) else [])
 
     override = str(floor_override_reason).strip() if floor_override_reason is not None else ""
     floor = max(0.0, _to_float(price_floor) if _to_float(price_floor) is not None else BUY_PRICE_FLOOR)
@@ -279,10 +295,12 @@ def price_expression_gate(
 
     return {
         "schema_version": PRICE_EXPRESSION_SCHEMA_VERSION,
-        "authorization": "APPROVED" if (not reject or not enforce) else "REJECTED",
+        "authorization": ("REJECTED" if safety_reject or (reject and enforce)
+                          else "APPROVED"),
         "enforced": bool(enforce),
-        "reject_reason_codes": reject if enforce else [],
-        "would_reject_codes": reject,
+        "reject_reason_codes": safety_reject + (reject if enforce else []),
+        "would_reject_codes": safety_reject + reject,
+        "live": bool(live),
         "entry_price": _r(px),
         "fee_rate": _r(rate),
         "fee_rate_source": fee_rate_source,
@@ -480,6 +498,29 @@ def selftest() -> dict[str, Any]:
     )
     g = price_expression_gate(entry_price=1.0, model_probability=0.5, fee_rate=rate)
     checks["bad_entry_price_rejected"] = "BAD_ENTRY_PRICE" in g["reject_reason_codes"]
+
+    # An unknown fee rate never authorizes a live taker order. The same order in a
+    # dry run is priced with the labelled estimate; a maker order pays no taker fee
+    # and is unaffected; and shadow mode does not switch the refusal off.
+    g = price_expression_gate(entry_price=0.50, model_probability=0.70, fee_rate=None,
+                              maker=False, live=True)
+    checks["live_taker_unknown_fee_refused"] = (
+        g["authorization"] == "REJECTED" and g["reject_reason_codes"] == ["FEE_RATE_UNKNOWN"])
+    g = price_expression_gate(entry_price=0.50, model_probability=0.70, fee_rate=None,
+                              maker=False, live=False)
+    checks["dry_run_unknown_fee_priced_with_labelled_estimate"] = (
+        g["authorization"] == "APPROVED" and g["fee_rate_source"] == "fallback")
+    g = price_expression_gate(entry_price=0.50, model_probability=0.70, fee_rate=None,
+                              maker=True, live=True)
+    checks["live_maker_unknown_fee_not_refused_for_fee"] = (
+        "FEE_RATE_UNKNOWN" not in g["reject_reason_codes"] and g["authorization"] == "APPROVED")
+    g = price_expression_gate(entry_price=0.50, model_probability=0.70, fee_rate=None,
+                              maker=False, live=True, enforce=False)
+    checks["unknown_fee_refusal_binds_in_shadow_mode"] = (
+        g["authorization"] == "REJECTED" and "FEE_RATE_UNKNOWN" in g["reject_reason_codes"])
+    g = price_expression_gate(entry_price=0.50, model_probability=0.70, fee_rate=0.05,
+                              maker=False, live=True, fee_rate_source="feeSchedule")
+    checks["live_taker_known_fee_not_refused_for_fee"] = g["authorization"] == "APPROVED"
 
     ok = all(checks.values())
     return {

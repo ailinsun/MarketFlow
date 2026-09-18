@@ -109,10 +109,8 @@ GAMMA_CACHE = os.path.join(OUT_DIR, "gamma_event_cache.json")
 MARKET_FEED = runtime_path("feeds", "markets.jsonl")
 # Paper-trading ledgers produced by whatever strategy modules the operator runs.
 # Both are overridable per call; neither is required for the exposure math itself.
-FLB_LEDGER = runtime_path("risk",
-                          "paper_ledgers", "flb_ledger.json")
-SM_LEDGER = runtime_path("risk",
-                         "paper_ledgers", "smart_money_ledger.json")
+KEYED_PAPER_LEDGER = runtime_path("risk", "paper_ledgers", "keyed_ledger.json")
+SECTIONED_PAPER_LEDGER = runtime_path("risk", "paper_ledgers", "sectioned_ledger.json")
 PRIVATE_SNAPSHOT = runtime_path("risk",
                                 "polymarket_private_position_snapshot", "latest.json")
 # Market metadata cache, the fallback source for tags, slug, question, end date and
@@ -121,10 +119,8 @@ PRIVATE_SNAPSHOT = runtime_path("risk",
 # stops. The path is deployment-configurable.
 MARKET_META_CACHE = runtime_path("risk",
                                  "market_meta_cache", "market_meta_cache.json")
-FLB_MARKET_META = runtime_path("risk",
-                               "polymarket_flb_backtest", "markets_meta_v2.jsonl")
-FLB_PRICE_SAMPLES = runtime_path("risk",
-                                 "polymarket_flb_backtest", "price_samples_v2.jsonl")
+BACKTEST_MARKET_META = runtime_path("risk", "backtest", "markets_meta.jsonl")
+BACKTEST_PRICE_SAMPLES = runtime_path("risk", "backtest", "price_samples.jsonl")
 
 SCHEMA_VERSION = "polymarket-event-exposure-v0.1"
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -260,11 +256,11 @@ def _pos_status(raw_status: Any, won: Optional[bool]) -> str:
     return "open"
 
 
-def load_flb_paper(path: str = FLB_LEDGER, *, include_settled: bool = False) -> list[Position]:
+def load_keyed_paper(path: str = KEYED_PAPER_LEDGER, *, include_settled: bool = False) -> list[Position]:
     """A paper-trading ledger keyed by condition id, where stake is the capital
     committed."""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"FLB ledger missing: {path}")
+        raise FileNotFoundError(f"keyed paper ledger missing: {path}")
     with open(path, encoding="utf-8") as fh:
         led = json.load(fh)
     out: list[Position] = []
@@ -281,7 +277,7 @@ def load_flb_paper(path: str = FLB_LEDGER, *, include_settled: bool = False) -> 
             title=str(p.get("question") or ""),
             slug=str(p.get("slug") or ""),
             end_date=p.get("end_date"),
-            source="flb_paper",
+            source="keyed_paper",
             status=st,
             won=(st == "won") if st in ("won", "lost") else None,
             outcome_label=str(p.get("side") or ""),
@@ -289,10 +285,10 @@ def load_flb_paper(path: str = FLB_LEDGER, *, include_settled: bool = False) -> 
     return out
 
 
-def load_smart_money_paper(path: str = SM_LEDGER, *, include_settled: bool = False) -> list[Position]:
+def load_sectioned_paper(path: str = SECTIONED_PAPER_LEDGER, *, include_settled: bool = False) -> list[Position]:
     """A second paper ledger whose open and closed sections share one shape."""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"smart-money ledger missing: {path}")
+        raise FileNotFoundError(f"sectioned paper ledger missing: {path}")
     with open(path, encoding="utf-8") as fh:
         led = json.load(fh)
     rows = list(led.get("open_positions") or [])
@@ -311,7 +307,7 @@ def load_smart_money_paper(path: str = SM_LEDGER, *, include_settled: bool = Fal
             title=str(p.get("title") or ""),
             slug="",
             event_hint=str(p.get("event_key") or ""),
-            source="smart_money_paper",
+            source="sectioned_paper",
             status=st,
             won=won,
             outcome_label=str(p.get("side") or ""),
@@ -562,8 +558,8 @@ def load_settled_meta() -> dict[str, dict]:
                     "market_class": m.get("market_class"),
                     "outcome_prices": m.get("outcome_prices") or [],
                 }
-    if os.path.exists(FLB_MARKET_META):
-        with open(FLB_MARKET_META, encoding="utf-8") as fh:
+    if os.path.exists(BACKTEST_MARKET_META):
+        with open(BACKTEST_MARKET_META, encoding="utf-8") as fh:
             for line in fh:
                 try:
                     d = json.loads(line)
@@ -1333,9 +1329,9 @@ def own_book_residuals(*, meta_gamma: bool = False) -> tuple[list[ResidualRow], 
     observations, so the control and the subject share a distribution and a failed
     control cannot be blamed on the data alone.
     """
-    settled = [p for p in load_flb_paper(include_settled=True) if p.status in ("won", "lost")]
+    settled = [p for p in load_keyed_paper(include_settled=True) if p.status in ("won", "lost")]
     try:
-        settled += [p for p in load_smart_money_paper(include_settled=True) if p.status in ("won", "lost")]
+        settled += [p for p in load_sectioned_paper(include_settled=True) if p.status in ("won", "lost")]
     except FileNotFoundError:
         pass
     settled = [p for p in settled if p.implied_p_win is not None]
@@ -1409,12 +1405,12 @@ def market_universe_residuals() -> tuple[list[ResidualRow], dict]:
     bias this sample does not carry; only a conclusion that holds in both is treated
     as structural.
     """
-    if not os.path.exists(FLB_PRICE_SAMPLES):
-        return [], {"error": f"missing {FLB_PRICE_SAMPLES}"}
+    if not os.path.exists(BACKTEST_PRICE_SAMPLES):
+        return [], {"error": f"missing {BACKTEST_PRICE_SAMPLES}"}
     settled_meta = load_settled_meta()
     rows: list[ResidualRow] = []
     recs: list[dict] = []
-    with open(FLB_PRICE_SAMPLES, encoding="utf-8") as fh:
+    with open(BACKTEST_PRICE_SAMPLES, encoding="utf-8") as fh:
         for line in fh:
             try:
                 d = json.loads(line)
@@ -1510,22 +1506,22 @@ def run_backtest(*, meta_gamma: bool = False) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def analyze_source(source: str, *, theme_rho: float = 0.0, use_gamma: bool = False,
                    path: Optional[str] = None) -> dict[str, Any]:
-    if source == "flb_paper":
-        pos = load_flb_paper(path or FLB_LEDGER)
+    if source == "keyed_paper":
+        pos = load_keyed_paper(path or KEYED_PAPER_LEDGER)
         bankroll = None
         try:
-            with open(path or FLB_LEDGER, encoding="utf-8") as fh:
+            with open(path or KEYED_PAPER_LEDGER, encoding="utf-8") as fh:
                 led = json.load(fh)
             bankroll = (_f(led.get("cash")) or 0.0) + sum(
                 _f(v.get("stake")) or 0.0 for v in (led.get("positions") or {}).values()
                 if v.get("status") == "open")
         except (OSError, json.JSONDecodeError):
             pass
-    elif source == "smart_money_paper":
-        pos = load_smart_money_paper(path or SM_LEDGER)
+    elif source == "sectioned_paper":
+        pos = load_sectioned_paper(path or SECTIONED_PAPER_LEDGER)
         bankroll = None
         try:
-            with open(path or SM_LEDGER, encoding="utf-8") as fh:
+            with open(path or SECTIONED_PAPER_LEDGER, encoding="utf-8") as fh:
                 led = json.load(fh)
             bankroll = _f(led.get("bankroll"))
         except (OSError, json.JSONDecodeError):
@@ -2097,8 +2093,8 @@ def selftest() -> dict[str, Any]:
     os.path.exists(cache_tmp) and os.remove(cache_tmp)
 
     # --- smoke test on real data, skipped when the files are absent ---
-    if os.path.exists(FLB_LEDGER):
-        real = analyze_source("flb_paper")
+    if os.path.exists(KEYED_PAPER_LEDGER):
+        real = analyze_source("keyed_paper")
         ck("real data: a report can be generated", real["n_legs"] > 0, f"n_legs={real['n_legs']}")
         ck("real data: true exposure is within the book",
            real["true_event_exposure_usd"] <= real["gross_cost_usd"] + 1e-9)
@@ -2144,7 +2140,7 @@ def selftest() -> dict[str, Any]:
        OUT_DIR.endswith(os.path.join("risk", "exposure"))
        and all(r.startswith(runtime_dir()) for r in write_roots), OUT_DIR)
     ck("boundary: no execution-state file is read or written",
-       all(x not in (GAMMA_CACHE + MARKET_FEED + FLB_LEDGER + SM_LEDGER + PRIVATE_SNAPSHOT)
+       all(x not in (GAMMA_CACHE + MARKET_FEED + KEYED_PAPER_LEDGER + SECTIONED_PAPER_LEDGER + PRIVATE_SNAPSHOT)
            for x in ("arm_state", "trade_log", "paper_state.json")))
 
     n_pass = sum(1 for c in checks if c["pass"])
@@ -2160,7 +2156,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Event exposure / correlation engine "
                                              "(read-only)")
     ap.add_argument("--selftest", action="store_true")
-    ap.add_argument("--source", choices=["flb_paper", "smart_money_paper",
+    ap.add_argument("--source", choices=["keyed_paper", "sectioned_paper",
                                          "private_snapshot", "generic", "all"],
                     default="all")
     ap.add_argument("--positions", help="positions file for the generic source (JSON/JSONL)")
@@ -2201,7 +2197,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"  verdict = {backtest['final_verdict']}, rho entering the engine = "
               f"{theme_rho:.3f}")
 
-    sources = (["flb_paper", "smart_money_paper", "private_snapshot"]
+    sources = (["keyed_paper", "sectioned_paper", "private_snapshot"]
                if args.source == "all" else [args.source])
     reports: list[dict] = []
     for s in sources:

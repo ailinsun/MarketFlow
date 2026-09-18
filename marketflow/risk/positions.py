@@ -12,7 +12,7 @@ Hard boundaries:
   - no order placement or cancellation;
   - secrets may only be read from local secret refs for authenticated read-only
     position discovery, and are never printed or written to ledger;
-  - no crypto paper.py, live kernel, state.mx, or execution runtime coupling.
+  - no coupling to the execution runtime.
 """
 
 from __future__ import annotations
@@ -70,9 +70,6 @@ READ_ONLY_BOUNDARIES = [
     "no_secret_ledger_write",
     "scoped_polymarket_sdk_http_proxy",
     "no_seed_phrase",
-    "no_crypto_paper_py",
-    "no_live_kernel",
-    "no_state_mx",
 ]
 
 FORBIDDEN_CONFIG_KEY_PARTS = (
@@ -752,7 +749,7 @@ def decide_position(
         current_notional = held_shares * b
         add_notional = target_notional - current_notional
         if f_target > 0.0 and add_notional > min_trade_usd:
-            # canary floor-to-min: add a real exchange-minimum lot to exercise the
+            # floor-to-min: add a real exchange-minimum lot to exercise the
             # entry chain; never let the resulting position exceed the market cap.
             add_notional_eff = max(add_notional, exchange_min_notional_usd)
             add_notional_eff = min(add_notional_eff, max(0.0, market_cap_frac * bankroll_usd - current_notional))
@@ -1399,7 +1396,7 @@ def human_summary(result: dict[str, Any]) -> str:
         "",
         "## Boundary",
         "",
-        "Read-only shadow run. No orders, cancels, wallet reads, private keys, API secrets, seed phrases, crypto paper.py, live kernel, or state.mx.",
+        "Read-only shadow run. No orders, cancels, wallet reads, private keys, API secrets or seed phrases.",
         "",
     ])
     return "\n".join(lines)

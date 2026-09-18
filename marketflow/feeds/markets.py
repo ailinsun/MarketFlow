@@ -1,21 +1,19 @@
 """
 Polymarket Gamma API market-metadata polling feed — standalone key infrastructure.
 
-Writes `runtime/feeds/markets.jsonl`, consumed by several
-modules downstream:
-market_intel_router / polymarket_execution_signals / polymarket_stale_window_reaction /
-polymarket_price_ws / polymarket_structural_mispricing / polymarket_cross_event_consistency.
-**Stopping this feed cuts the market-metadata source for every one of them at
-once**, and they degrade quietly rather than loudly, so its liveness is worth
-monitoring separately.
+Writes `runtime/feeds/markets.jsonl`, read downstream by the price websocket
+(`marketflow.execution.price_ws`, for its watch list) and by exposure accounting
+(`marketflow.risk.exposure`, for market metadata). **Stopping this feed cuts the
+market-metadata source for both at once**, and they degrade quietly rather than
+loudly, so its liveness is worth monitoring separately.
 
 Source:
   - Polymarket Gamma API (gamma-api.polymarket.com): prediction market metadata + outcome prices.
-  - LA outbound IP verified accessible 2026-05-28; geofence applies only to order-placement endpoints, not read-only metadata.
+  - the venue geofence applies only to order-placement endpoints, not read-only metadata.
 
 Output:
-  runtime/feeds/markets.jsonl  — one D6 v0.1 market_snapshot per active market per poll.
-  runtime/logs/feeds/polymarket.log            — human-readable + new-market / large-prob-move log.
+  runtime/feeds/markets.jsonl  — one market_snapshot row per active market per poll.
+  runtime/logs/feeds/markets.log   — human-readable log of new markets and large probability moves.
 
 Schema: d6_predict_market_row_v0.1
 + UMA fields (uma_bond, uma_reward, resolved_by) + Polymarket-specific (restricted, neg_risk, enable_order_book).
@@ -39,13 +37,13 @@ os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 HTTP_AGENT_HEADER = "Us" + "er-Agent"
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
-PAGE_LIMIT = 100                   # Gamma server-side cap = 100 (verified 2026-05-28, ignores limit>100)
+PAGE_LIMIT = 100                   # Gamma server-side cap = 100 (it ignores limit>100)
 POLL_INTERVAL = 300                # mirrors funding.py cadence
 PAGINATION_SAFETY_CAP = 1000       # universe at liq>=500k observed ~195 markets
 NEW_MARKET_RECENT_HOURS = 24       # log freshly-created markets as INFO
 LIQUIDITY_MIN_USD = 500000         # server filter; full active universe ~5000+ would write 26GB/mo
 VOLUME_24H_MIN_USD = 1000          # client filter; long-tail negRisk sub-markets share liq pool but vol24h<$1k
-                                   # Gamma has no volume24h_min server filter (verified 2026-05-28)
+                                   # Gamma has no volume24h_min server filter 
 
 # In-memory dedup for "NEW" log lines + tracking for large prob moves between polls.
 # jsonl always appends full snapshots regardless of these.
@@ -256,13 +254,13 @@ def poll_once():
 
 
 def main():
-    log(f"polymarket_belief starting | source=Gamma | poll={POLL_INTERVAL}s | page_limit={PAGE_LIMIT}")
+    log(f"market feed starting | source=Gamma | poll={POLL_INTERVAL}s | page_limit={PAGE_LIMIT}")
     log(f"  jsonl={JSONL_PATH}")
     log(f"  server filter=active+open + liquidity>=${LIQUIDITY_MIN_USD:,}")
     log(f"  client filter=vol24h>=${VOLUME_24H_MIN_USD:,} (skip long-tail negRisk sub-markets)")
     log(f"  new-market log threshold={NEW_MARKET_RECENT_HOURS}h since createdAt")
     log(f"  big-move log threshold |Δp|>={LARGE_PROB_MOVE_DELTA} between polls (binary only)")
-    log("  LA outbound IP: 'restricted=true' is Polymarket geofence flag (verified 2026-05-28); we only read metadata.")
+    log("  'restricted=true' is the venue's geofence flag; this feed only reads metadata.")
     while True:
         try:
             poll_once()
@@ -275,5 +273,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        log("polymarket_belief stopped (SIGINT)")
+        log("market feed stopped (SIGINT)")
         sys.exit(0)

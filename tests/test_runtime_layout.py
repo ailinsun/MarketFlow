@@ -2,9 +2,10 @@
 """The runtime state tree must match the package layout, and watchers must watch
 paths that writers write.
 
-This exists because they diverged once and nothing noticed: the money-path watchdog
+This exists because they diverged twice and nothing noticed. The money-path watchdog
 was moved to the published layout while the writer kept the old one, so the watchdog
-of the money path watched a file that was never created. Its own self-test passed,
+of the money path watched a file that was never created; and the execution funnel and
+the money-path target both named ledgers under a directory no published module writes. Its own self-test passed,
 because it only checked that a path resolved, not that anything wrote there. A
 heartbeat monitor that silently watches the wrong path is worse than no monitor: it
 reports healthy forever and it is the last line of defence.
@@ -17,6 +18,7 @@ import re
 import unittest
 
 from marketflow import runtime_dir
+from marketflow.execution import daemon, funnel, orders
 from marketflow.monitor import watchdog
 from marketflow.risk import money_path
 
@@ -35,6 +37,17 @@ class TestWatchersWatchWhatWritersWrite(unittest.TestCase):
             money_path.LATEST_PATH, watchdog._resolve(target[1]),
             "the money-path watchdog is watching a path nothing writes")
 
+    def test_money_path_watches_the_file_the_daemon_writes(self):
+        """The watchdog's target is the daemon's per-tick heartbeat, nothing else."""
+        target = next(t for t in money_path.TARGETS if t[0] == "execution-daemon")
+        self.assertEqual(target[1], daemon.DEFAULT_LATEST_JSON)
+
+    def test_the_funnel_reads_the_ledgers_the_execution_layer_writes(self):
+        """A funnel pointed at a path nothing writes reports an empty funnel forever."""
+        self.assertEqual(funnel.ORDER_LEDGER, orders.DEFAULT_LEDGER)
+        self.assertEqual(funnel.DAEMON_LEDGER, daemon.DEFAULT_LEDGER)
+        self.assertEqual(funnel.INTENT_QUEUE, daemon.DEFAULT_INTENT_QUEUE)
+
     def test_every_execution_side_target_resolves_under_the_runtime_tree(self):
         for label, rel, _max_age, _human in watchdog.TARGETS:
             resolved = watchdog._resolve(rel)
@@ -44,7 +57,7 @@ class TestWatchersWatchWhatWritersWrite(unittest.TestCase):
 
     def test_the_two_buckets_never_collide(self):
         """A mirrored heartbeat written to the service's own bucket is never read."""
-        own = watchdog._resolve("state.json")
+        own = watchdog._resolve("watchdog_state.json")
         mirrored = watchdog._resolve("execution/anything.json")
         self.assertNotEqual(os.path.dirname(own), os.path.dirname(mirrored))
 
