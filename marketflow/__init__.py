@@ -1,13 +1,13 @@
 """MarketFlow — execution and risk control for event-contract markets.
 
-The package is layered so that each layer can only be reached through the one
-below it:
+Data flows one way, and authority is a separate axis:
 
-    feeds      read-only market and chain data
-    risk       risk budget, position sizing, event exposure, correlation
-    execution  order construction, market gates, the trading daemon
-    guardian   wallet authority, arm state, structural traps, share ledger
-    monitor    settlement guards, watchdogs, operator alerts
+    feeds      read-only market data, large prints, tape rotation
+    risk       exposure, capital-relative budgets, sizing, structural gates
+    execution  market gates, order construction and fuses, the exit-first daemon
+    guardian   delegated mandates: authority proofs, arm state, enclave signing
+    monitor    settlement guards, heartbeat watchdogs, operator alerts
+    mcp        a read-only data plane over the same modules
 
 `marketflow.paths` decides where state is written. Nothing else in the package
 computes a project root.
@@ -16,5 +16,5 @@ from __future__ import annotations
 
 from marketflow.paths import PACKAGE_DIR, PROJECT_DIR, runtime_dir, runtime_path
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __all__ = ["PACKAGE_DIR", "PROJECT_DIR", "runtime_dir", "runtime_path", "__version__"]

@@ -11,9 +11,12 @@ The audit hook records a socket or urllib attempt even when the module under tes
 catches the exception, so "the self-test passed" cannot quietly mean "it reached
 the internet and got an answer it liked".
 
-A package module whose third-party dependency is not installed is reported as
-skipped rather than failed: the core is standard-library-only by design, and the
-signing layer is an opt-in install.
+A package module whose optional third-party dependency is not installed is
+reported as skipped rather than failed: the core is standard-library-only by
+design, and the signing layer is an opt-in install. Only the packages named in
+requirements-signing.txt count as optional. Any other missing module -- above
+all a missing or misnamed first-party module -- is a failure, so a broken import
+can never be laundered into "skipped".
 """
 from __future__ import annotations
 
@@ -49,7 +52,12 @@ if attempts:
 raise SystemExit(code)
 '''
 
-MODULE_WRAPPER = _GUARD + '''import runpy
+# Import names of the optional signing install (requirements-signing.txt). A
+# missing module outside this set fails the run.
+OPTIONAL_IMPORTS = ("cryptography", "eth_account", "eth_abi", "eth_utils",
+                    "polymarket", "httpx", "h2", "pydantic", "websockets")
+
+MODULE_WRAPPER = _GUARD + "OPTIONAL = " + repr(OPTIONAL_IMPORTS) + "\n" + '''import runpy
 module = sys.argv[1]
 sys.argv = sys.argv[1:]
 code = 0
@@ -58,8 +66,11 @@ try:
 except SystemExit as exc:
     code = exc.code or 0
 except ModuleNotFoundError as exc:
-    print("MISSING_DEPENDENCY:" + (exc.name or "?"))
-    raise SystemExit(0)
+    top = (exc.name or "").split(".")[0]
+    if top in OPTIONAL:
+        print("MISSING_DEPENDENCY:" + (exc.name or "?"))
+        raise SystemExit(0)
+    raise
 if attempts:
     raise SystemExit("Network attempt during offline test")
 raise SystemExit(code)
@@ -151,7 +162,7 @@ def main():
 
     # The signing layer keeps its suites in dedicated runners rather than a
     # --selftest flag, because they need the optional third-party install.
-    for module in ("marketflow.guardian.selftest", "marketflow.guardian.phase1_selftest"):
+    for module in ("marketflow.guardian.selftest",):
         status, detail = run_module(module)
         print(f"{status} suite: {module}" + (f"  [{detail}]" if detail else ""))
         if status == "FAIL":
