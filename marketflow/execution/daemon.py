@@ -2221,7 +2221,7 @@ class EntryManager:
             limit_price=None,
             est_notional_usd=round(float(shares) * float(min_price), 8),
             max_loss_usd=None,
-            reason=monitor.safe_str(candidate.get("reason") or "MarketFlow chat-generated bounded reduce/exit intent"),
+            reason=monitor.safe_str(candidate.get("reason") or "externally supplied bounded reduce/exit intent"),
             order_kind="market",
             market_order_type=order_type,
             min_price=float(min_price),
