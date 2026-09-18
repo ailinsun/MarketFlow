@@ -34,7 +34,8 @@ make demo      # end-to-end on synthetic data, no credentials, no network
 make verify    # every gate and self-test, offline
 ```
 
-Python 3.9+. The core has no third-party dependencies at all.
+Python 3.9+. The core has no third-party dependencies at all; the signing layer needs
+3.10+ (see `requirements-signing.txt`).
 
 ---
 

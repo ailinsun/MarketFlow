@@ -12,7 +12,7 @@ make demo
 
 Python 3.9 or newer, nothing installed. `make verify` runs the publication gate and
 every self-test in the repository; `make demo` walks a synthetic portfolio through the
-real risk and execution modules.
+real risk and execution modules. (The optional signing install below needs 3.10+.)
 
 `make verify` prints one line per check and ends non-zero on any failure. One line
 says `SKIP ... needs cryptography` — that is the guardian suite, which needs the
