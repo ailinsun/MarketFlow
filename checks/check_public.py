@@ -25,19 +25,34 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Binary assets are reviewed by eye and pinned by digest. The tree ships none today;
-# any entry added here must have been opened and looked at, not just hashed.
-REVIEWED_IMAGES: dict[str, str] = {}
-
 # Public protocol contracts on Polygon. Each one is a published, externally
 # verifiable address that the code must know in order to talk to the venue at all.
 # Nothing else may appear as a 40-hex address: no operator wallet, no tenant wallet,
 # no third party's wallet. Synthetic fixture addresses are matched separately below.
 # Binary files are never scanned as text. Each one is pinned to the digest it was
 # reviewed at, so a changed or added binary fails the gate until a human looks at it.
-REVIEWED_IMAGES = {
-    "assets/marketflow-social.jpg": "9d46835486734d2073b1602a1056243e18f78119a2d2e57d9ef7fc3a5dda4950",
-    "assets/marketflow.png": "59ea5ea491d3ea53f4528aa883d979343c41e48b87f0a34d03d9b176b5948544",
+# path -> every digest the file has been reviewed and accepted at. A set rather
+# than one digest because history is scanned too: an asset that was reviewed, then
+# superseded, still appears under its old bytes in an older commit, and re-reviewing
+# the same image on every replacement is what would push somebody to widen the rule
+# instead. Anything not in the set still fails, so the guarantee is unchanged: no
+# binary passes the gate that a human has not looked at.
+REVIEWED_IMAGES: dict[str, set[str]] = {
+    # The README cover and the repository's social preview card, rendered from the
+    # project's own published numbers and carrying no identity of their own:
+    # 1774x600 for the README, 1280x640 for GitHub's social preview.
+    "assets/marketflow-cover.jpg": {
+        "adf2cc05ae865274a6de9ab51d4a9ad109b45299fd2e6178e487036c80ed19d2",
+    },
+    "assets/marketflow-social.jpg": {
+        "9f2882a1eb8eddd132797f706ef9c25df4b1aa6d4fc40a53f110ab0db7438097",
+        "9d46835486734d2073b1602a1056243e18f78119a2d2e57d9ef7fc3a5dda4950",  # v0.2.0 art
+    },
+    # Superseded by the cover above and no longer in the tree; kept so the history
+    # that still contains it stays verifiable.
+    "assets/marketflow.png": {
+        "59ea5ea491d3ea53f4528aa883d979343c41e48b87f0a34d03d9b176b5948544",
+    },
 }
 
 # No file in the current tree may name a person — not the README, not the source, not
@@ -191,8 +206,9 @@ def scan_text(name: str, content: str) -> list[str]:
 
 
 def scan_blob(name: str, content: bytes) -> list[str]:
-    if name in REVIEWED_IMAGES:
-        if hashlib.sha256(content).hexdigest() != REVIEWED_IMAGES[name]:
+    accepted = REVIEWED_IMAGES.get(name)
+    if accepted is not None:
+        if hashlib.sha256(content).hexdigest() not in accepted:
             return [name + ": image changed; explicit review required"]
         return []
     try:
@@ -285,7 +301,7 @@ def check(root: Path, history: bool = False, history_all: bool = False) -> list[
             hits.append(name + ": generated/editor file")
         if name in REVIEWED_IMAGES:
             hits.extend(scan_blob(name, p.read_bytes()))
-            continue
+            continue  # every accepted digest is already one a human reviewed
         try:
             content = p.read_text()
         except UnicodeDecodeError:

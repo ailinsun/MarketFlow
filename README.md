@@ -1,5 +1,10 @@
 # MarketFlow
 
+![MarketFlow — execution and risk control for event-contract markets, backed by
+reproducible market-microstructure research. The card carries the published sample:
+439 settled markets, 1,338,933 taker BUY fills, $419.4M of buy notional, and the
+three ledger rows.](assets/marketflow-cover.jpg)
+
 **Execution and risk control for event-contract markets, backed by reproducible
 market-microstructure research.**
 

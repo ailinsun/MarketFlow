@@ -10,6 +10,7 @@ The positive control matters too: the gate must return nothing on the real tree,
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import pathlib
 import tempfile
@@ -100,6 +101,22 @@ class TestGateCatchesViolations(unittest.TestCase):
         name = next(iter(gate.REVIEWED_IMAGES))
         self.assertEqual(gate.scan_blob(name, b"not the reviewed bytes"),
                          [name + ": image changed; explicit review required"])
+
+    def test_a_superseded_but_reviewed_image_still_passes_in_history(self):
+        """History is scanned too: an asset that was reviewed and later replaced
+        appears under its old bytes in an older commit, and must not block it."""
+        name = "assets/marketflow-social.jpg"
+        old_bytes = b"the bytes of the previous, already-reviewed version"
+        digest = hashlib.sha256(old_bytes).hexdigest()
+        saved = gate.REVIEWED_IMAGES[name]
+        try:
+            gate.REVIEWED_IMAGES[name] = saved | {digest}
+            self.assertEqual(gate.scan_blob(name, old_bytes), [])
+            gate.REVIEWED_IMAGES[name] = saved
+            self.assertEqual(gate.scan_blob(name, old_bytes),
+                             [name + ": image changed; explicit review required"])
+        finally:
+            gate.REVIEWED_IMAGES[name] = saved
 
 
 class TestGateAllowsWhatItShould(unittest.TestCase):
