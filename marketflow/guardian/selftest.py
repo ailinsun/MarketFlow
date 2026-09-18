@@ -214,6 +214,19 @@ def selftest() -> dict:
             checks["arm_refused_for_non_user_root_record"] = "not a user-root delegation" in str(exc)
         res = garm.arm_tenant("TEST1")
         checks["arm_writes_exit_only"] = res.get("mode") == "exit_only"
+        # The audit trail is a claimed capability, so it is asserted rather than
+        # assumed: arming and registering must both leave a row behind.
+        try:
+            with open(gstore.AUDIT_FILE, encoding="utf-8") as _af:
+                _audit_rows = [json.loads(x) for x in _af if x.strip()]
+        except (OSError, ValueError):   # no file, or an unreadable row
+            _audit_rows = []
+        checks["audit_records_arming"] = any(
+            r.get("event") == "tenant_armed" and r.get("tenant_id") == "TEST1" for r in _audit_rows)
+        checks["audit_records_authority_verification"] = any(
+            r.get("event") == "user_root_authority_verified" for r in _audit_rows)
+        checks["audit_never_carries_a_credential"] = not any(
+            k in json.dumps(_audit_rows) for k in ("private_key", "api_secret", "passphrase"))
         st = garm.arm_status("TEST1")
         checks["arm_status_valid_via_validator"] = st["armed"] is True and st["mode"] == "exit_only"
         plan_armed = gexec.plan_exit_for_decision("TEST1", sell, position)
